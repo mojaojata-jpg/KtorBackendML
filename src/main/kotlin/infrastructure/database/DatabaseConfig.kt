@@ -1,6 +1,7 @@
 package infrastructure.database
 
 import infrastructure.database.tables.AdminTable
+import infrastructure.database.tables.ProductTable // <-- Tambahin ini
 import io.ktor.server.application.*
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -21,7 +22,7 @@ object DatabaseFactory {
 
         transaction(db) {
             exec("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
-            SchemaUtils.create(AdminTable)
+            SchemaUtils.create(AdminTable, ProductTable) // <-- Tambahin ProductTable
         }
         return db
     }
