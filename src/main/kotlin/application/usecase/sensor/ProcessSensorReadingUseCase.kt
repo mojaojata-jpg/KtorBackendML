@@ -6,7 +6,6 @@ import domain.repository.IOTDeviceRepository
 import domain.repository.ProductRepository
 import domain.repository.SensorRepository
 import domain.repository.StockRepository
-import java.time.LocalDateTime
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -16,7 +15,6 @@ class ProcessSensorReadingUseCase(
     private val deviceRepository: IOTDeviceRepository,
     private val productRepository: ProductRepository
 ) {
-    private val MAX_WEIGHT_JUMP_PERCENT = 30.0
 
     suspend operator fun invoke(
         deviceCode: String,
@@ -24,78 +22,71 @@ class ProcessSensorReadingUseCase(
         filteredWeight: Double,
         recordedAt: String
     ): SensorReading {
-        // 1. Basic Validation
+        // 1. Validasi Input Dasar
         require(deviceCode.isNotBlank()) { "Device code is required" }
         require(rawWeight >= 0) { "Raw weight cannot be negative" }
         require(filteredWeight >= 0) { "Filtered weight cannot be negative" }
 
-        // 2. Business Rules: Device must be registered
+        // 2. Business Rules: Pastikan Device dan Product terdaftar
         val device = deviceRepository.findByCode(deviceCode)
             ?: throw IllegalArgumentException("Device not found: $deviceCode")
 
         val product = productRepository.findById(device.productId)
-            ?: throw Exception("Product not associated with device: $deviceCode")
+            ?: throw Exception("Product associated with device $deviceCode not found")
 
-        // 3. Calculate Noise Level
+        val deviceId = device.id ?: throw Exception("Internal Error: Device ID missing")
+        val productId = product.id ?: throw Exception("Internal Error: Product ID missing")
+
+        // 3. Hitung Noise Level & Estimasi Stok
         val noiseLevel = abs(rawWeight - filteredWeight)
-
-        // 4. Anomaly Detection: Compare with previous reading
-        val previousReading = sensorRepository.getLatestReading(device.id!!)
-        var isAnomaly = false
+        val estimatedStock = floor(filteredWeight / product.unitWeight).toInt()
+        
+        // 4. Tentukan Validation Status
         var validationStatus = "VALID"
-
-        if (previousReading != null) {
-            val prevWeight = previousReading.filteredWeight
-            if (prevWeight > 0) {
-                val diff = abs(filteredWeight - prevWeight)
-                val diffPercent = (diff / prevWeight) * 100
-                if (diffPercent > MAX_WEIGHT_JUMP_PERCENT) {
-                    validationStatus = "SUSPICIOUS"
-                    isAnomaly = true
-                }
-            }
-        }
-
-        // 5. Validation Logic based on Noise
-        if (validationStatus == "VALID" && noiseLevel > 1.0) { // Threshold noise 1kg
+        if (noiseLevel > 1.0) {
             validationStatus = "UNSTABLE"
         }
 
-        // 6. Calculate Estimated Stock
-        val estimatedStock = floor(filteredWeight / product.unitWeight).toInt()
+        // 5. UPDATE SNAPSHOT (SELALU UPDATE - Agar Dashboard Android tetap "Live" / Real-time)
+        // Kita update snapshot agar timestamp 'lastUpdated' dan 'currentWeight' di dashboard selalu baru
+        val snapshot = StockSnapshot(
+            productId = productId,
+            deviceId = deviceId,
+            currentWeight = filteredWeight,
+            currentStock = estimatedStock,
+            status = validationStatus,
+            snapshotTime = recordedAt
+        )
+        stockRepository.updateSnapshot(snapshot)
 
-        // 7. Create Sensor Reading Domain Model
+        // 6. Ambil Data Terakhir untuk Perbandingan Histori (Deduplication)
+        val previousReading = sensorRepository.getLatestReading(deviceId)
+        
+        // --- LOGIC SKIP HISTORY (Deduplication) ---
+        // Kita SKIP simpan ke tabel histori (sensor_readings) kalau stok masih sama (hemat storage Neon)
+        // Tapi Snapshot di atas tetap terupdate!
+        if (previousReading != null && estimatedStock == previousReading.estimatedStock) {
+            deviceRepository.updateLastSeen(deviceId)
+            return previousReading
+        }
+
+        // 7. Simpan Histori (Hanya jika stok berubah)
         val reading = SensorReading(
-            deviceId = device.id!!,
-            productId = product.id!!,
+            deviceId = deviceId,
+            productId = productId,
             rawWeight = rawWeight,
             filteredWeight = filteredWeight,
             estimatedStock = estimatedStock,
             validationStatus = validationStatus,
             noiseLevel = noiseLevel,
-            isAnomaly = isAnomaly,
+            isAnomaly = false,
             recordedAt = recordedAt
         )
 
-        // 8. Transactional persistence: Save Reading & Update Snapshot
-        // Note: RepositoryImpl handles the transaction context
         val savedReading = sensorRepository.saveReading(reading)
 
-        // 9. Update Stock Snapshot ONLY if VALID or UNSTABLE
-        if (validationStatus == "VALID" || validationStatus == "UNSTABLE") {
-            val snapshot = StockSnapshot(
-                productId = product.id!!,
-                deviceId = device.id!!,
-                currentWeight = filteredWeight,
-                currentStock = estimatedStock,
-                status = validationStatus,
-                snapshotTime = recordedAt
-            )
-            stockRepository.updateSnapshot(snapshot)
-        }
-
-        // 10. Update Last Seen (Cara 2)
-        deviceRepository.updateLastSeen(device.id!!)
+        // 8. Update Last Seen Alat IoT
+        deviceRepository.updateLastSeen(deviceId)
 
         return savedReading
     }

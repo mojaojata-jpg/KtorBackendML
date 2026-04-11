@@ -4,7 +4,11 @@ import application.usecase.auth.LoginUseCase
 import application.usecase.auth.RegisterUseCase
 import application.usecase.product.*
 import application.usecase.iot.*
-import application.usecase.sensor.*
+import application.usecase.sensor.ProcessSensorReadingUseCase
+import application.usecase.sensor.GetSensorHistoryUseCase
+import application.usecase.prediction.GetAllPredictionsUseCase
+import application.usecase.prediction.GetPredictionByProductIdUseCase
+import application.usecase.stock.*
 
 class UseCaseModule(private val repositoryModule: RepositoryModule) {
     // Auth UseCases
@@ -27,13 +31,16 @@ class UseCaseModule(private val repositoryModule: RepositoryModule) {
     val updateDeviceLastSeenUseCase: UpdateDeviceLastSeenUseCase by lazy { UpdateDeviceLastSeenUseCase(repositoryModule.iotDeviceRepository) }
     val checkInactiveDevicesUseCase: CheckInactiveDevicesUseCase by lazy { CheckInactiveDevicesUseCase(repositoryModule.iotDeviceRepository) }
 
-    // Sensor Data UseCases (PRO VERSION)
-    val processSensorReadingUseCase: ProcessSensorReadingUseCase by lazy {
-        ProcessSensorReadingUseCase(
-            sensorRepository = repositoryModule.sensorRepository,
-            stockRepository = repositoryModule.stockRepository,
-            deviceRepository = repositoryModule.iotDeviceRepository,
-            productRepository = repositoryModule.productRepository
-        )
+    // Sensor Data UseCase (PRO VERSION)
+    val processSensorReadingUseCase: ProcessSensorReadingUseCase by lazy { 
+        ProcessSensorReadingUseCase(repositoryModule.sensorRepository, repositoryModule.stockRepository, repositoryModule.iotDeviceRepository, repositoryModule.productRepository)
     }
+    val getSensorHistoryUseCase: GetSensorHistoryUseCase by lazy { GetSensorHistoryUseCase(repositoryModule.sensorRepository) }
+
+    // Stock UseCases
+    val getStockDashboardUseCase: GetStockDashboardUseCase by lazy { GetStockDashboardUseCase(repositoryModule.stockRepository) }
+
+    // Prediction UseCases
+    val getAllPredictionsUseCase: GetAllPredictionsUseCase by lazy { GetAllPredictionsUseCase(repositoryModule.predictionRepository) }
+    val getPredictionByProductIdUseCase: GetPredictionByProductIdUseCase by lazy { GetPredictionByProductIdUseCase(repositoryModule.predictionRepository) }
 }

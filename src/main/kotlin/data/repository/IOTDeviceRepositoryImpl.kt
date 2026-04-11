@@ -18,7 +18,7 @@ class IOTDeviceRepositoryImpl(private val database: Database) : IOTDeviceReposit
             it[deviceCode] = device.deviceCode
             it[deviceName] = device.deviceName
             it[productId] = UUID.fromString(device.productId)
-            it[status] = "ACTIVE" // Default to ACTIVE on creation
+            it[status] = "ACTIVE"
             it[lastSeenAt] = LocalDateTime.now()
             it[createdAt] = LocalDateTime.now()
             it[updatedAt] = LocalDateTime.now()
@@ -58,7 +58,7 @@ class IOTDeviceRepositoryImpl(private val database: Database) : IOTDeviceReposit
     }
 
     override suspend fun updateLastSeen(id: String): Boolean = dbQuery {
-        // FIX: Update lastSeenAt AND set status back to ACTIVE
+        // FIX: Update lastSeenAt DAN paksa status jadi ACTIVE
         IOTDeviceTable.update({ IOTDeviceTable.id eq UUID.fromString(id) }) {
             it[lastSeenAt] = LocalDateTime.now()
             it[status] = "ACTIVE"

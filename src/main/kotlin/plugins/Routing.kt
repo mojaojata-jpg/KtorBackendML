@@ -34,5 +34,11 @@ fun Application.configureRouting(appComponent: AppComponent) {
         rateLimit(RateLimitName("sensor-limit")) {
             sensorRoutes(appComponent.controllerModule.sensorController)
         }
+
+        // 6. Stock Monitoring Routes (Protected)
+        stockRoutes(appComponent.controllerModule.stockController)
+
+        // 7. Prediction Monitoring Routes (Protected)
+        predictionRoutes(appComponent.controllerModule.predictionController)
     }
 }

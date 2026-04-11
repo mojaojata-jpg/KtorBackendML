@@ -1,10 +1,7 @@
 package infrastructure.di
 
 import infrastructure.security.JwtService
-import presentation.controller.AuthController
-import presentation.controller.ProductController
-import presentation.controller.IOTDeviceController
-import presentation.controller.SensorController
+import presentation.controller.*
 
 class ControllerModule(
     private val useCaseModule: UseCaseModule,
@@ -35,11 +32,25 @@ class ControllerModule(
             getDeviceByIdUseCase = useCaseModule.getDeviceByIdUseCase,
             updateDeviceUseCase = useCaseModule.updateDeviceUseCase,
             deleteDeviceUseCase = useCaseModule.deleteDeviceUseCase,
-            updateDeviceLastSeenUseCase = useCaseModule.updateDeviceLastSeenUseCase // <-- Tambahin ini
+            updateDeviceLastSeenUseCase = useCaseModule.updateDeviceLastSeenUseCase
         )
     }
 
     val sensorController: SensorController by lazy {
-        SensorController(useCaseModule.processSensorDataUseCase)
+        SensorController(useCaseModule.processSensorReadingUseCase)
+    }
+
+    val stockController: StockController by lazy {
+        StockController(
+            useCaseModule.getStockDashboardUseCase,
+            useCaseModule.getSensorHistoryUseCase
+        )
+    }
+
+    val predictionController: PredictionController by lazy {
+        PredictionController(
+            getAllPredictionsUseCase = useCaseModule.getAllPredictionsUseCase,
+            getPredictionByProductIdUseCase = useCaseModule.getPredictionByProductIdUseCase
+        )
     }
 }

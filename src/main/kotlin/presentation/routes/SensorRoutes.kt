@@ -5,7 +5,8 @@ import io.ktor.server.routing.*
 import presentation.controller.SensorController
 
 fun Route.sensorRoutes(sensorController: SensorController) {
-    route("/api/v1/sensor-readings") { // Sesuai Sensor_reading_plan.md
+    route("/api/v1/sensor-readings") {
+        // IoT Device Ingestion (Public with Rate Limit in Routing.kt)
         post {
             sensorController.processSensorData(call)
         }

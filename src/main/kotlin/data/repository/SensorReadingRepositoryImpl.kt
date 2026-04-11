@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import java.time.LocalDateTime
+import java.time.Instant
+import java.time.ZoneId
 import java.util.*
 
 class SensorReadingRepositoryImpl(private val database: Database) : SensorRepository {
@@ -22,7 +24,7 @@ class SensorReadingRepositoryImpl(private val database: Database) : SensorReposi
             it[validationStatus] = reading.validationStatus
             it[noiseLevel] = reading.noiseLevel.toBigDecimal()
             it[isAnomaly] = reading.isAnomaly
-            it[recordedAt] = LocalDateTime.parse(reading.recordedAt)
+            it[recordedAt] = parseFlexibleDateTime(reading.recordedAt)
         }
 
         insertStatement.resultedValues?.singleOrNull()?.let(::toSensorReading)
@@ -40,10 +42,26 @@ class SensorReadingRepositoryImpl(private val database: Database) : SensorReposi
     override suspend fun getLatestReading(deviceId: String): SensorReading? = dbQuery {
         SensorReadingTable.selectAll()
             .where { SensorReadingTable.deviceId eq UUID.fromString(deviceId) }
-            .orderBy(SensorReadingTable.recordedAt, SortOrder.DESC)
+            .orderBy(SensorReadingTable.createdAt, SortOrder.DESC)
             .limit(1)
             .map(::toSensorReading)
             .singleOrNull()
+    }
+
+    private fun parseFlexibleDateTime(dateString: String): LocalDateTime {
+        return try {
+            // Handle ISO 8601 with 'Z' (e.g. 2026-03-27T11:00:00Z)
+            val instant = Instant.parse(dateString)
+            LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
+        } catch (e: Exception) {
+            try {
+                // Fallback to local date time without 'Z'
+                LocalDateTime.parse(dateString)
+            } catch (e2: Exception) {
+                // Last resort fallback
+                LocalDateTime.now()
+            }
+        }
     }
 
     private fun toSensorReading(row: ResultRow) = SensorReading(
