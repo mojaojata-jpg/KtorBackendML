@@ -1,13 +1,17 @@
 package domain.model
 
-import kotlinx.serialization.Serializable
+import java.time.LocalDateTime
+import java.util.UUID
 
-@Serializable
 data class Product(
-    val id: String? = null,
+    val id: UUID? = null,
     val name: String,
     val code: String,
-    val unitWeight: Double,
-    val minStockThreshold: Int,
-    val description: String? = null
+    val unitLabel: String = "pcs",
+    val minStockThreshold: Int = 0,
+    val description: String? = null,
+    val imageUrl: String? = null,
+    val isActive: Boolean = true,
+    val createdAt: LocalDateTime = LocalDateTime.now(),
+    val updatedAt: LocalDateTime = LocalDateTime.now()
 )

@@ -6,7 +6,8 @@ import kotlinx.serialization.Serializable
 data class ProductRequest(
     val name: String,
     val code: String,
-    val unitWeight: Double,
+    val unitLabel: String = "pcs",
     val minStockThreshold: Int,
-    val description: String? = null
+    val description: String? = null,
+    val imageUrl: String? = null
 )

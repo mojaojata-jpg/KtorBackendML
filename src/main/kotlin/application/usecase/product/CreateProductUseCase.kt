@@ -7,14 +7,15 @@ class CreateProductUseCase(private val repository: ProductRepository) {
     suspend operator fun invoke(
         name: String,
         code: String,
-        unitWeight: Double,
+        unitLabel: String,
         minStockThreshold: Int,
-        description: String?
+        description: String?,
+        imageUrl: String? = null
     ): Product {
         // 1. Validasi Input
         require(name.isNotBlank()) { "Product name cannot be empty" }
         require(code.isNotBlank()) { "Product code cannot be empty" }
-        require(unitWeight > 0) { "Unit weight must be greater than zero" }
+        require(unitLabel.isNotBlank()) { "Unit label cannot be empty" }
         require(minStockThreshold >= 0) { "Minimum stock threshold cannot be negative" }
 
         // 2. Business Logic: Cek kode produk duplikat
@@ -26,9 +27,10 @@ class CreateProductUseCase(private val repository: ProductRepository) {
         val product = Product(
             name = name,
             code = code,
-            unitWeight = unitWeight,
+            unitLabel = unitLabel,
             minStockThreshold = minStockThreshold,
-            description = description
+            description = description,
+            imageUrl = imageUrl
         )
 
         return repository.create(product)

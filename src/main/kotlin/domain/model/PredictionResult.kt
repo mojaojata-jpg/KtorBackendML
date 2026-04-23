@@ -1,17 +1,17 @@
 package domain.model
 
-import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.UUID
 
-@Serializable
 data class PredictionResult(
-    val id: String? = null,
-    val productId: String,
+    val id: UUID? = null,
+    val productId: UUID,
     val modelName: String,
     val modelVersion: String,
+    val currentStock: Int,
     val predictedDaysRemaining: Int,
-    val predictedStockOutDate: String, // Use String for Date to simplify serialization
-    val confidenceScore: Double?,
-    val createdAt: String? = null
+    val predictedStockOutDate: LocalDate,
+    val confidenceScore: Double? = null,
+    val createdAt: LocalDateTime = LocalDateTime.now()
 )

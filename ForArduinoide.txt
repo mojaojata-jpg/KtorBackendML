@@ -1,0 +1,144 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+// ==========================================
+// 1. KONFIGURASI WIFI
+// ==========================================
+const char* ssid = "Bbbb";        // Ganti dengan nama WiFi / Hotspot HP
+const char* password = "12345678910"; // Ganti dengan password WiFi
+
+// ==========================================
+// 2. KONFIGURASI API (KTOR BACKEND)
+// ==========================================
+// Ganti 10.106.88.172 dengan IP Laptop kamu (saya cek tadi ip laptop kamu 10.106.88.172)
+const String serverUrl = "http://10.106.88.172:8080/api/v1/inventory/register-tag";
+
+// Masukkan JWT Token Admin (Didapat dari login Ktor, karena endpoint register butuh JWT)
+const String jwtToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwOi8vMC4wLjAuMDo4MDgwIiwiaXNzIjoiaHR0cDovLzAuMC4wLjA6ODA4MCIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJleHAiOjE3NzY5NDM2MTh9.IluYvxvlIfm5_X5SKhdpk3lLTj559gkhHY218otTQkU";
+
+// Masukkan ID Produk (UUID) tempat tag ini mau didaftarkan
+const String productId = "7d698ad1-5ed2-4d97-a924-1135408e7264"; 
+
+// ==========================================
+// 3. PIN DEFINITIONS (Sama seperti sebelumnya)
+// ==========================================
+#define SS_PIN      5   
+#define RST_PIN     22  
+#define BUZZER_PIN  21  
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+void setup() {
+  Serial.begin(115200);
+  SPI.begin();
+  mfrc522.PCD_Init();
+  
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  Serial.println("\n=====================================");
+  Serial.println("  SISTEM MONITORING STOK IoT ESP32  ");
+  Serial.println("=====================================");
+  
+  // Mulai Koneksi WiFi
+  Serial.print("Menghubungkan ke WiFi: ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\n✅ WiFi Terhubung!");
+  Serial.print("IP Address ESP32: ");
+  Serial.println(WiFi.localIP());
+  
+  Serial.println("\nStatus: Modul Siap untuk MODE REGISTER!");
+  Serial.println("Silakan dekatkan Tag/Kartu RFID ke Reader...");
+  
+  // Beep 2 kali tanda siap
+  digitalWrite(BUZZER_PIN, HIGH); delay(100); digitalWrite(BUZZER_PIN, LOW); delay(100);
+  digitalWrite(BUZZER_PIN, HIGH); delay(100); digitalWrite(BUZZER_PIN, LOW);
+}
+
+void loop() {
+  // Cek apakah ada kartu
+  if (!mfrc522.PICC_IsNewCardPresent()) return;
+  if (!mfrc522.PICC_ReadCardSerial()) return;
+
+  // Baca dan Format UID
+  String uidString = "";
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    if (mfrc522.uid.uidByte[i] < 0x10) uidString += "0";
+    uidString += String(mfrc522.uid.uidByte[i], HEX);
+    if (i != mfrc522.uid.size - 1) uidString += ":";
+  }
+  uidString.toUpperCase();
+
+  Serial.print("\n[+] Tag UID Terdeteksi: ");
+  Serial.println(uidString);
+
+  // Beep sekali sebagai tanda berhasil scan
+  digitalWrite(BUZZER_PIN, HIGH); delay(200); digitalWrite(BUZZER_PIN, LOW);
+
+  // ==========================================
+  // KIRIM DATA KE BACKEND VIA HTTP POST
+  // ==========================================
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverUrl);
+    
+    // Setup Header JSON dan Authorization JWT
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + jwtToken);
+
+    // Buat JSON Body manual (sesuai format yg diminta Ktor)
+    String httpRequestData = "{\"product_id\":\"" + productId + "\",\"tag_uid\":\"" + uidString + "\",\"tag_label\":\"Tag Register Dari ESP32\"}";
+    
+    Serial.println("🚀 Mengirim Request Register ke API...");
+    Serial.println("📦 Body: " + httpRequestData);
+
+    // Eksekusi POST Request
+    int httpResponseCode = http.POST(httpRequestData);
+    
+    if (httpResponseCode > 0) {
+      Serial.print("📡 HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      
+      String payload = http.getString();
+      Serial.println("📄 Response JSON dari Server: ");
+      Serial.println(payload);
+      
+      // Jika response 201 Created atau 200 OK
+      if(httpResponseCode == 201 || httpResponseCode == 200) {
+         Serial.println("✅ BERHASIL: Tag masuk ke Database!");
+         // Bunyi sukses panjang
+         digitalWrite(BUZZER_PIN, HIGH); delay(600); digitalWrite(BUZZER_PIN, LOW);
+      } else {
+         Serial.println("❌ GAGAL: Tag ditolak Server (Mungkin sudah terdaftar / token salah).");
+         // Bunyi error 3x cepat
+         for(int i=0; i<3; i++) {
+            digitalWrite(BUZZER_PIN, HIGH); delay(100); digitalWrite(BUZZER_PIN, LOW); delay(100);
+         }
+      }
+    } else {
+      Serial.print("❌ ERROR Network/Server Mati: ");
+      Serial.println(httpResponseCode);
+    }
+    
+    // Tutup koneksi
+    http.end();
+  } else {
+    Serial.println("❌ Error: WiFi Terputus!");
+  }
+
+  // Hentikan pembacaan kartu saat ini biar nggak spam
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
+  
+  Serial.println("\nSelesai. Tunggu 2 detik untuk scan lagi...");
+  delay(2000); 
+}

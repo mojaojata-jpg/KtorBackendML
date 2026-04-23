@@ -7,9 +7,10 @@ data class ProductResponse(
     val id: String,
     val name: String,
     val code: String,
-    val unitWeight: Double,
+    val unitLabel: String,
     val minStockThreshold: Int,
     val description: String? = null,
+    val imageUrl: String? = null,
     val createdAt: String,
     val updatedAt: String
 )

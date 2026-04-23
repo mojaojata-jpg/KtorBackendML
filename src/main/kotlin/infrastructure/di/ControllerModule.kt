@@ -5,6 +5,7 @@ import presentation.controller.*
 
 class ControllerModule(
     private val useCaseModule: UseCaseModule,
+    private val repositoryModule: RepositoryModule,
     private val jwtService: JwtService
 ) {
     val authController: AuthController by lazy { 
@@ -25,25 +26,13 @@ class ControllerModule(
         )
     }
 
-    val iotDeviceController: IOTDeviceController by lazy {
-        IOTDeviceController(
-            registerDeviceUseCase = useCaseModule.registerDeviceUseCase,
-            getDevicesUseCase = useCaseModule.getDevicesUseCase,
-            getDeviceByIdUseCase = useCaseModule.getDeviceByIdUseCase,
-            updateDeviceUseCase = useCaseModule.updateDeviceUseCase,
-            deleteDeviceUseCase = useCaseModule.deleteDeviceUseCase,
-            updateDeviceLastSeenUseCase = useCaseModule.updateDeviceLastSeenUseCase
-        )
-    }
-
-    val sensorController: SensorController by lazy {
-        SensorController(useCaseModule.processSensorReadingUseCase)
-    }
-
-    val stockController: StockController by lazy {
-        StockController(
-            useCaseModule.getStockDashboardUseCase,
-            useCaseModule.getSensorHistoryUseCase
+    val inventoryController: InventoryController by lazy {
+        InventoryController(
+            processRfidScanUseCase = useCaseModule.processRfidScanUseCase,
+            registerRfidTagUseCase = useCaseModule.registerRfidTagUseCase,
+            getInventoryDashboardUseCase = useCaseModule.getInventoryDashboardUseCase,
+            getInventoryHistoryUseCase = useCaseModule.getInventoryHistoryUseCase,
+            inventoryRepository = repositoryModule.inventoryRepository
         )
     }
 

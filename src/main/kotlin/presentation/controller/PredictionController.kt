@@ -18,13 +18,13 @@ class PredictionController(
             val predictions = getAllPredictionsUseCase()
             val responseData = predictions.map { 
                 PredictionResponse(
-                    productId = it.productId,
+                    productId = it.productId.toString(),
                     modelName = it.modelName,
                     modelVersion = it.modelVersion,
                     predictedDaysRemaining = it.predictedDaysRemaining,
-                    predictedStockOutDate = it.predictedStockOutDate,
+                    predictedStockOutDate = it.predictedStockOutDate.toString(),
                     confidenceScore = it.confidenceScore,
-                    createdAt = it.createdAt
+                    createdAt = it.createdAt.toString()
                 )
             }
 
@@ -63,13 +63,13 @@ class PredictionController(
             }
 
             val responseData = PredictionResponse(
-                productId = prediction.productId,
+                productId = prediction.productId.toString(),
                 modelName = prediction.modelName,
                 modelVersion = prediction.modelVersion,
                 predictedDaysRemaining = prediction.predictedDaysRemaining,
-                predictedStockOutDate = prediction.predictedStockOutDate,
+                predictedStockOutDate = prediction.predictedStockOutDate.toString(),
                 confidenceScore = prediction.confidenceScore,
-                createdAt = prediction.createdAt
+                createdAt = prediction.createdAt.toString()
             )
 
             call.respond(

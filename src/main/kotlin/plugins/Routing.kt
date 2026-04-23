@@ -13,9 +13,6 @@ fun Application.configureRouting(appComponent: AppComponent) {
         register(RateLimitName("auth-limit")) {
             rateLimiter(limit = 10, refillPeriod = 60.seconds)
         }
-        register(RateLimitName("sensor-limit")) {
-            rateLimiter(limit = 10, refillPeriod = 1.seconds)
-        }
     }
 
     routing {
@@ -27,18 +24,10 @@ fun Application.configureRouting(appComponent: AppComponent) {
         // 3. Product Routes (Protected)
         productRoutes(appComponent.controllerModule.productController)
 
-        // 4. IoT Device Routes (Public & Protected)
-        iotDeviceRoutes(appComponent.controllerModule.iotDeviceController)
+        // 4. Inventory Routes (RFID Based)
+        inventoryRoutes(appComponent.controllerModule.inventoryController)
 
-        // 5. Sensor Data Ingestion (Public with Rate Limit)
-        rateLimit(RateLimitName("sensor-limit")) {
-            sensorRoutes(appComponent.controllerModule.sensorController)
-        }
-
-        // 6. Stock Monitoring Routes (Protected)
-        stockRoutes(appComponent.controllerModule.stockController)
-
-        // 7. Prediction Monitoring Routes (Protected)
+        // 5. Prediction Monitoring Routes (Protected)
         predictionRoutes(appComponent.controllerModule.predictionController)
     }
 }
