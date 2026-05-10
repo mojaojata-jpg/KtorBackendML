@@ -44,5 +44,12 @@ class ControllerModule(
             syncAggregationUseCase = useCaseModule.syncAggregationUseCase
         )
     }
+
+    val reportController: ReportController by lazy {
+        ReportController(
+            getMonthlySummaryUseCase = useCaseModule.getMonthlySummaryUseCase,
+            getDailyReportUseCase = useCaseModule.getDailyReportUseCase
+        )
+    }
 }
 

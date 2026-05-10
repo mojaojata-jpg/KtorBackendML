@@ -28,6 +28,8 @@ Dokumentasi lengkap untuk semua endpoint API backend Ktor. Cocok untuk tim **Mob
    - [GET /api/v1/inventory/chart-data/{productId}](#51-get-data-grafik--estimasi-stok-habis)
    - [POST /api/v1/inventory/aggregate/manual](#52-trigger-agregasi-harian-manual)
    - [POST /api/admin/inventory/aggregate/sync](#53-admin-sync-agregasi-harian-protected)
+   - [GET /api/v1/inventory/{productId}/monthly-summary](#54-ringkasan-bulanan-per-produk-protected)
+   - [GET /api/v1/reports/daily](#55-laporan-harian-protected)
 6. [Error Responses Global](#6-error-responses-global)
 
 ---
@@ -991,7 +993,7 @@ Modul baru ini menggantikan sistem regresi linear lama. Data disediakan dalam be
 
 ### 5.1 GET Data Grafik & Estimasi Stok Habis
 
-Endpoint utama untuk menampilkan dashboard produk. Mengembalikan data histori (30 hari terakhir) dan data ramalan masa depan dari Prophet.
+Endpoint utama untuk menampilkan dashboard produk. Mengembalikan data histori (**30 hari terakhir**) dan data ramalan masa depan dari Prophet (**30 hari ke depan**). Total data yang dikembalikan adalah 60 titik waktu.
 
 - **Method:** `GET`
 - **URL:** `/api/v1/inventory/chart-data/{productId}`
@@ -1129,6 +1131,129 @@ Endpoint untuk Admin agar bisa **memperbarui data rekapitulasi stok secara real-
 }
 ```
 
+---
+
+### 5.4 Ringkasan Bulanan per Produk (Protected)
+
+Mengambil ringkasan total barang masuk dan keluar untuk satu produk di bulan tertentu. Cocok untuk bar chart perbandingan bulan ini vs bulan lalu vs 2 bulan lalu.
+
+- **Method:** `GET`
+- **URL:** `/api/v1/inventory/{productId}/monthly-summary?month=YYYY-MM`
+- **Auth:** ✅ JWT Required
+- **Query Parameter:** `month` (format `YYYY-MM`, **wajib**)
+
+**Contoh URL:**
+- `/api/v1/inventory/7d698ad1.../monthly-summary?month=2026-04` → Data April 2026
+- `/api/v1/inventory/7d698ad1.../monthly-summary?month=2026-03` → Data Maret 2026
+
+---
+
+**✅ Response Success — `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "productId": "7d698ad1-5ed2-4d97-a924-1135408e7264",
+    "productName": "Kopi Arabika 1kg",
+    "productCode": "KOPI-ARA-001",
+    "month": "2026-04",
+    "totalIn": 116,
+    "totalOut": 387,
+    "netFlow": -271,
+    "dailyBreakdown": [
+      { "date": "2026-04-01", "totalIn": 4, "totalOut": 12, "netFlow": -8 },
+      { "date": "2026-04-02", "totalIn": 5, "totalOut": 15, "netFlow": -10 }
+    ]
+  },
+  "message": "Monthly summary for 2026-04 retrieved successfully"
+}
+```
+
+**Penjelasan Field:**
+| Field | Deskripsi |
+|---|---|
+| `totalIn` | Total barang masuk (REGISTER + IN) selama bulan itu |
+| `totalOut` | Total barang keluar (OUT) selama bulan itu |
+| `netFlow` | Selisih IN - OUT |
+| `dailyBreakdown` | Data harian (dari `daily_aggregates`) untuk detail per hari |
+
+**❌ Response Error — `400 Bad Request` (Format Bulan Salah / Tidak Dikirim):**
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Invalid month format. Use YYYY-MM (e.g., 2026-04)"
+}
+```
+
+---
+
+### 5.5 Laporan Harian (Protected)
+
+Menghasilkan laporan lengkap untuk satu hari: total IN/OUT per produk dan daftar scan log. Cocok untuk ekspor Excel atau laporan harian admin.
+
+- **Method:** `GET`
+- **URL:** `/api/v1/reports/daily?date=YYYY-MM-DD`
+- **Auth:** ✅ JWT Required
+- **Query Parameter:** `date` (format `YYYY-MM-DD`, opsional — default: hari ini)
+
+---
+
+**✅ Response Success — `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "date": "2026-05-10",
+    "products": [
+      {
+        "productId": "7d698ad1-...",
+        "productName": "Kopi Arabika 1kg",
+        "productCode": "KOPI-ARA-001",
+        "unit": "pcs",
+        "totalIn": 5,
+        "totalOut": 3,
+        "netFlow": 2,
+        "currentStock": 15,
+        "status": "SUFFICIENT"
+      }
+    ],
+    "grandTotalIn": 20,
+    "grandTotalOut": 12,
+    "grandNetFlow": 8,
+    "scanLogs": [
+      {
+        "eventType": "OUT",
+        "productName": "Kopi Arabika 1kg",
+        "productCode": "KOPI-ARA-001",
+        "quantity": 1,
+        "recordedAt": "2026-05-10T14:30:00",
+        "note": "Scan via IoT"
+      }
+    ]
+  },
+  "message": "Daily report for 2026-05-10 generated successfully"
+}
+```
+
+**Penjelasan Field:**
+| Field | Deskripsi |
+|---|---|
+| `products` | Ringkasan per-produk: stok, IN/OUT, status |
+| `grandTotalIn/Out/NetFlow` | Grand total semua produk |
+| `scanLogs` | Detail setiap event scan yang terjadi di hari itu |
+| `status` | `SUFFICIENT` / `LOW_STOCK` / `OUT_OF_STOCK` (real-time) |
+
+**❌ Response Error — `400 Bad Request` (Format Tanggal Salah):**
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Invalid date format. Use YYYY-MM-DD (e.g., 2026-05-10)",
+  "error_code": null
+}
+```
+
 ## 6. Error Responses Global
 
 Error berikut dapat terjadi di **semua endpoint** dan ditangani secara global oleh `StatusPages` plugin:
@@ -1207,6 +1332,8 @@ Terjadi untuk error yang bukan `IllegalArgumentException` (misalnya database err
 | `GET` | `/api/v1/inventory/chart-data/{productId}` | ❌ Public | `200` | Grafik & Estimasi Stok Habis (Prophet) |
 | `POST` | `/api/v1/inventory/aggregate/manual` | ❌ Public | `200` | Trigger rekap harian manual |
 | `POST` | `/api/admin/inventory/aggregate/sync` | ✅ JWT | `200` | Admin Sync agregasi semua produk |
+| `GET` | `/api/v1/inventory/{productId}/monthly-summary` | ✅ JWT | `200` | Ringkasan bulanan per produk (bar chart) |
+| `GET` | `/api/v1/reports/daily` | ✅ JWT | `200` | Laporan harian (Excel-style) |
 
 ---
 

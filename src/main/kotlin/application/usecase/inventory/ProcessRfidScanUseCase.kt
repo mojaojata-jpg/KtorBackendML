@@ -64,7 +64,7 @@ class ProcessRfidScanUseCase(
         // 5. Determine Status
         val status = when {
             finalStock == 0 -> "OUT_OF_STOCK"
-            finalStock < product.minStockThreshold -> "LOW_STOCK"
+            finalStock <= product.minStockThreshold -> "LOW_STOCK"
             else -> "SUFFICIENT"
         }
 

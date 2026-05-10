@@ -29,6 +29,9 @@ fun Application.configureRouting(appComponent: AppComponent) {
 
         // 6. Chart & Aggregation Routes
         chartRoutes(appComponent.controllerModule)
+
+        // 7. Report Routes (Monthly Summary, Daily Report)
+        reportRoutes(appComponent.controllerModule)
     }
 }
 

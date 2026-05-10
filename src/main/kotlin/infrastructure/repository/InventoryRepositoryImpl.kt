@@ -221,4 +221,21 @@ class InventoryRepositoryImpl : InventoryRepository {
         createdAt = row[ProductTable.createdAt],
         updatedAt = row[ProductTable.updatedAt]
     )
+
+    override suspend fun getAllEventsForDate(date: java.time.LocalDate, limit: Int): List<Pair<InventoryEvent, domain.model.Product>> = newSuspendedTransaction {
+        val startOfDay = date.atStartOfDay()
+        val endOfDay = date.atTime(23, 59, 59)
+
+        (InventoryEventTable innerJoin ProductTable)
+            .selectAll()
+            .where {
+                (InventoryEventTable.recordedAt.between(startOfDay, endOfDay)) and
+                (InventoryEventTable.productId eq ProductTable.id)
+            }
+            .orderBy(InventoryEventTable.recordedAt to SortOrder.DESC)
+            .limit(limit)
+            .map { row ->
+                Pair(rowToEvent(row), rowToProduct(row))
+            }
+    }
 }

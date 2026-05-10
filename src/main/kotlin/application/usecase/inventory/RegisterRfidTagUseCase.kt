@@ -73,7 +73,7 @@ class RegisterRfidTagUseCase(
         
         val status = when {
             newStock == 0 -> "OUT_OF_STOCK"
-            newStock < product.minStockThreshold -> "LOW_STOCK"
+            newStock <= product.minStockThreshold -> "LOW_STOCK"
             else -> "SUFFICIENT"
         }
 

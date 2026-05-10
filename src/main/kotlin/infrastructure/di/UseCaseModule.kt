@@ -46,5 +46,13 @@ class UseCaseModule(private val repositoryModule: RepositoryModule) {
             repositoryModule.forecastRepository
         )
     }
+
+    // Report UseCases
+    val getMonthlySummaryUseCase: application.usecase.GetMonthlySummaryUseCase by lazy {
+        application.usecase.GetMonthlySummaryUseCase(repositoryModule.productRepository, repositoryModule.aggregateRepository)
+    }
+    val getDailyReportUseCase: application.usecase.GetDailyReportUseCase by lazy {
+        application.usecase.GetDailyReportUseCase(repositoryModule.inventoryRepository, repositoryModule.productRepository)
+    }
 }
 
