@@ -23,6 +23,11 @@ fun Route.inventoryRoutes(inventoryController: InventoryController) {
                 inventoryController.getDashboard(call)
             }
             
+            // Set IoT Operation Mode (Pintar)
+            post("/iot-mode") {
+                inventoryController.setIotMode(call)
+            }
+            
             // History per product
             get("/{productId}/history") {
                 inventoryController.getHistory(call)

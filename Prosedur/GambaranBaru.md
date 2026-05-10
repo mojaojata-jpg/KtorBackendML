@@ -25,13 +25,15 @@ Sistem ini dirancang untuk lingkungan usaha yang memiliki bahan operasional yang
         ↓
 [ ESP32 + RFID Reader ]
         ↓
-[ Backend API (Ktor) ]
+[ Backend API (Ktor) ]  ← (Daily Aggregation Job)
         ↓
-[ PostgreSQL (Neon) ]
+[ PostgreSQL (Neon) ]  ← (daily_aggregates table)
         ↓
-[ ML Service (Python) ]
+[ ML Service (Python) ] ← (Prophet Engine)
         ↓
-[ Backend API (Ktor) ]
+[ PostgreSQL (Neon) ]  ← (forecasting_results table)
+        ↓
+[ Backend API (Ktor) ]  ← (Real-time Prediction Calculation)
         ↓
 [ Client App (Android / Web) ]
 ````
@@ -137,15 +139,19 @@ Backend adalah pusat dari seluruh sistem dan bertanggung jawab untuk:
 
 * Menyediakan endpoint untuk:
 
-  * Admin (`/auth`, `/products`, `/register-tag`)
-  * IoT Scanner (`/scan`, `/register-scan`)
-  * Client (`/stocks`, `/predictions`, `/history`)
+  * Admin (`/auth`, `/products`, `/register-tag`, `/admin/inventory/aggregate/sync`)
+  * IoT Scanner (`/scan`)
+  * Client (`/inventory/dashboard`, `/inventory/chart-data/{id}`, `/inventory/{id}/history`)
 
-#### f. Integration Layer
+#### f. Aggregation Engine (NEW)
+* Menjalankan Background Job tiap malam (23:59) untuk merangkum ribuan scan harian menjadi satu baris rekapitulasi (Total IN, Total OUT).
+* Menyediakan endpoint Admin Sync (`/api/admin/inventory/aggregate/sync`) untuk memperbarui rekap secara real-time saat Admin menekan tombol "Sync" di frontend.
+* Menyimpan rekap tersebut ke tabel `daily_aggregates` sebagai bahan baku ML.
 
-* Menyediakan data untuk ML
-* Mengambil hasil prediksi dari ML
-* Menyajikan data stok terkini untuk client
+#### g. Real-time Prediction Calculation
+* Mengambil data ramalan harian dari Python.
+* Menghitung "Estimated Stock Out Date" secara langsung (dynamic) berdasarkan stok riil terbaru saat ini dikurangi ramalan pengeluaran harian.
+* Menyajikan data grafik gabungan (histori + ramalan) untuk Client.
 
 ---
 
@@ -157,9 +163,10 @@ Database menyimpan:
 
 * Data master produk (`products`)
 * Mapping tag RFID ke produk (`product_rfid_tags`)
-* Histori scan dan pergerakan stok (`inventory_events`)
+* Histori scan pergerakan stok (`inventory_events`)
 * Stok terkini (`inventory_snapshots`)
-* Hasil prediksi (`prediction_results`)
+* Rekapitulasi harian (`daily_aggregates`)
+* Ramalan deret waktu masa depan (`forecasting_results`)
 * Data admin (`admins`)
 
 Database digunakan untuk:
@@ -178,43 +185,21 @@ Database digunakan untuk:
 ML service berjalan terpisah dari backend (decoupled).
 
 #### a. Input
-
-Mengambil data dari database:
-
-* `inventory_events`
-* `inventory_snapshots`
-
-Data yang dipakai difilter berdasarkan:
-
-* Produk yang valid
-* Event yang valid
-* Histori waktu yang cukup
-* Stok yang memiliki pola konsumsi jelas
+Mengambil data agregat dari database:
+* `daily_aggregates` (Data yang sudah diringkas oleh Ktor)
 
 #### b. Processing
-
-* Mengubah histori event menjadi time-series stok
-* Menggunakan model prediksi, misalnya Linear Regression
-
-Contoh:
-
-```text
-stock(t) = m * t + b
-```
+* Menggunakan model **Prophet (Meta)** untuk menangani tren dan musiman (seasonality).
+* Menghasilkan ramalan pengeluaran barang (`yhat`) untuk 30-90 hari ke depan.
 
 #### c. Output
-
-Menghasilkan:
-
-* predicted_days_remaining
-* predicted_stock_out_date
-* confidence_score
+Menghasilkan ramalan harian berupa:
+* `predicted_value` (Estimasi jumlah keluar)
+* `lower_bound` & `upper_bound`
 
 #### d. Storage
-
-Hasil prediksi disimpan ke:
-
-* `prediction_results`
+Hasil ramalan disimpan ke:
+* `forecasting_results`
 
 ---
 
@@ -276,33 +261,28 @@ Admin / petugas pilih mode OUT
 ```
 
 ### 4.4 Backend to Database
-
 ```text
 Backend → INSERT product_rfid_tags
 Backend → INSERT inventory_events
 Backend → UPDATE / INSERT inventory_snapshots
-Backend → INSERT prediction_results
+Backend → INSERT daily_aggregates (via Nightly Job)
 ```
 
 ### 4.5 Database to ML
-
 ```text
-ML Service → SELECT inventory_events
-ML Service → SELECT inventory_snapshots
+ML Service → SELECT daily_aggregates
 ```
 
 ### 4.6 ML to Database
-
 ```text
-ML → INSERT prediction_results
+ML → INSERT forecasting_results
 ```
 
 ### 4.7 Backend to Client
-
 ```text
-Client → GET /stocks
-Client → GET /history
-Client → GET /predictions
+Client → GET /inventory/dashboard
+Client → GET /inventory/chart-data/{id}
+Client → GET /inventory/{id}/history
 ```
 
 Backend mengambil:

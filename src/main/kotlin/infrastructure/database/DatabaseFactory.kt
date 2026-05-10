@@ -27,7 +27,8 @@ object DatabaseFactory {
                 ProductRfidTagTable,
                 InventoryEventTable,
                 InventorySnapshotTable,
-                PredictionTable
+                DailyAggregateTable,
+                ForecastingResultTable
             )
         }
         

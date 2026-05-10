@@ -24,19 +24,36 @@ class RegisterRfidTagUseCase(
 
         // 2. Check if tag already exists
         val existingTag = inventoryRepository.findTagByUid(tagUid)
-        if (existingTag != null) {
-            throw IllegalArgumentException("RFID Tag already registered: $tagUid (Product: ${existingTag.productId})")
+        
+        val savedTag = if (existingTag != null) {
+            // Jika tag sudah ada tapi statusnya INACTIVE, kita BOLEH daftarin ulang (Reusable)
+            if (existingTag.status == "INACTIVE") {
+                // Update tag lama jadi ACTIVE dan ganti produknya (jika beda)
+                inventoryRepository.updateTagStatus(existingTag.id!!, "ACTIVE")
+                
+                // Jika produknya berubah, kita update juga product_id-nya
+                val updatedTag = existingTag.copy(
+                    productId = UUID.fromString(productId),
+                    tagLabel = tagLabel ?: existingTag.tagLabel,
+                    status = "ACTIVE"
+                )
+                // Kita asumsikan repository punya fungsi update, jika tidak kita pakai saveTag (UPSERT)
+                inventoryRepository.saveTag(updatedTag) 
+            } else {
+                // Kalau masih ACTIVE, baru kita kasih error (biar gak double input)
+                throw IllegalArgumentException("RFID Tag is still ACTIVE in system: $tagUid (Product: ${existingTag.productId})")
+            }
+        } else {
+            // 3. Register Tag Baru
+            val newTag = ProductRfidTag(
+                productId = UUID.fromString(productId),
+                tagUid = tagUid,
+                tagLabel = tagLabel,
+                registeredByAdminId = adminId?.let { UUID.fromString(it) },
+                status = "ACTIVE"
+            )
+            inventoryRepository.saveTag(newTag)
         }
-
-        // 3. Register Tag
-        val newTag = ProductRfidTag(
-            productId = UUID.fromString(productId),
-            tagUid = tagUid,
-            tagLabel = tagLabel,
-            registeredByAdminId = adminId?.let { UUID.fromString(it) },
-            status = "ACTIVE"
-        )
-        val savedTag = inventoryRepository.saveTag(newTag)
 
         // 4. Record REGISTER Event
         val event = InventoryEvent(

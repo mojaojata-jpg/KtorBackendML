@@ -19,16 +19,32 @@ class InventoryRepositoryImpl : InventoryRepository {
     }
 
     override suspend fun saveTag(tag: ProductRfidTag): ProductRfidTag = newSuspendedTransaction {
-        val id = ProductRfidTagTable.insert {
-            it[ProductRfidTagTable.id] = UUID.randomUUID()
-            it[productId] = tag.productId
-            it[tagUid] = tag.tagUid
-            it[tagLabel] = tag.tagLabel
-            it[status] = tag.status
-            it[registeredByAdminId] = tag.registeredByAdminId
-        } get ProductRfidTagTable.id
-        
-        tag.copy(id = id)
+        val existing = ProductRfidTagTable
+            .selectAll()
+            .where { ProductRfidTagTable.id eq (tag.id ?: UUID.randomUUID()) }
+            .singleOrNull()
+
+        if (existing != null) {
+            ProductRfidTagTable.update({ ProductRfidTagTable.id eq existing[ProductRfidTagTable.id] }) {
+                it[productId] = tag.productId
+                it[tagUid] = tag.tagUid
+                it[tagLabel] = tag.tagLabel
+                it[status] = tag.status
+                it[registeredByAdminId] = tag.registeredByAdminId
+                it[updatedAt] = java.time.LocalDateTime.now()
+            }
+            tag
+        } else {
+            val id = ProductRfidTagTable.insert {
+                it[ProductRfidTagTable.id] = tag.id ?: UUID.randomUUID()
+                it[productId] = tag.productId
+                it[tagUid] = tag.tagUid
+                it[tagLabel] = tag.tagLabel
+                it[status] = tag.status
+                it[registeredByAdminId] = tag.registeredByAdminId
+            } get ProductRfidTagTable.id
+            tag.copy(id = id)
+        }
     }
 
     override suspend fun updateTagStatus(tagId: UUID, status: String): Unit = newSuspendedTransaction {
@@ -53,15 +69,33 @@ class InventoryRepositoryImpl : InventoryRepository {
     }
 
     override suspend fun saveSnapshot(snapshot: InventorySnapshot): InventorySnapshot = newSuspendedTransaction {
-        val id = InventorySnapshotTable.insert {
-            it[InventorySnapshotTable.id] = UUID.randomUUID()
-            it[productId] = snapshot.productId
-            it[currentStock] = snapshot.currentStock
-            it[status] = snapshot.status
-            it[sourceEventId] = snapshot.sourceEventId
-        } get InventorySnapshotTable.id
-        
-        snapshot.copy(id = id)
+        // UPSERT LOGIC: Jika sudah ada untuk product_id ini, UPDATE. Jika tidak ada, INSERT.
+        val existingId = InventorySnapshotTable
+            .select(InventorySnapshotTable.id)
+            .where { InventorySnapshotTable.productId eq snapshot.productId }
+            .limit(1)
+            .map { it[InventorySnapshotTable.id] }
+            .singleOrNull()
+
+        if (existingId != null) {
+            InventorySnapshotTable.update({ InventorySnapshotTable.id eq existingId }) {
+                it[currentStock] = snapshot.currentStock
+                it[status] = snapshot.status
+                it[snapshotTime] = java.time.LocalDateTime.now()
+                it[sourceEventId] = snapshot.sourceEventId
+            }
+            snapshot.copy(id = existingId)
+        } else {
+            val id = InventorySnapshotTable.insert {
+                it[InventorySnapshotTable.id] = UUID.randomUUID()
+                it[productId] = snapshot.productId
+                it[currentStock] = snapshot.currentStock
+                it[status] = snapshot.status
+                it[snapshotTime] = java.time.LocalDateTime.now()
+                it[sourceEventId] = snapshot.sourceEventId
+            } get InventorySnapshotTable.id
+            snapshot.copy(id = id)
+        }
     }
 
     override suspend fun getLatestSnapshot(productId: UUID): InventorySnapshot? = newSuspendedTransaction {
@@ -72,10 +106,16 @@ class InventoryRepositoryImpl : InventoryRepository {
             .singleOrNull()
     }
 
-    override suspend fun getProductHistory(productId: UUID, limit: Int): List<InventoryEvent> = newSuspendedTransaction {
+    override suspend fun getProductHistory(productId: UUID, limit: Int, startDate: java.time.LocalDate?): List<InventoryEvent> = newSuspendedTransaction {
+        val startDateTime = startDate?.atStartOfDay()
+        
         InventoryEventTable
             .selectAll()
-            .where { InventoryEventTable.productId eq productId }
+            .where { 
+                val base = InventoryEventTable.productId eq productId
+                if (startDateTime != null) base and (InventoryEventTable.recordedAt greaterEq startDateTime)
+                else base
+            }
             .orderBy(InventoryEventTable.createdAt, SortOrder.DESC)
             .limit(limit)
             .map { row ->
@@ -102,16 +142,25 @@ class InventoryRepositoryImpl : InventoryRepository {
         }
     }
 
-    override suspend fun getProductStats(productId: UUID): Pair<Int, Int> = newSuspendedTransaction {
-        val incoming = InventoryEventTable
-            .select(InventoryEventTable.quantity.sum())
+    override suspend fun getProductStats(productId: UUID, startDate: java.time.LocalDate?, endDate: java.time.LocalDate?): Pair<Int, Int> = newSuspendedTransaction {
+        val startDateTime = startDate?.atStartOfDay()
+        val endDateTime = endDate?.atTime(23, 59, 59)
+
+        val incoming = InventoryEventTable.select(InventoryEventTable.quantity.sum())
             .where { (InventoryEventTable.productId eq productId) and (InventoryEventTable.eventType inList listOf("REGISTER", "IN")) }
+            .apply {
+                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
+                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
+            }
             .map { it[InventoryEventTable.quantity.sum()] ?: 0 }
             .singleOrNull() ?: 0
 
-        val outgoing = InventoryEventTable
-            .select(InventoryEventTable.quantity.sum())
+        val outgoing = InventoryEventTable.select(InventoryEventTable.quantity.sum())
             .where { (InventoryEventTable.productId eq productId) and (InventoryEventTable.eventType eq "OUT") }
+            .apply {
+                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
+                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
+            }
             .map { it[InventoryEventTable.quantity.sum()] ?: 0 }
             .singleOrNull() ?: 0
 

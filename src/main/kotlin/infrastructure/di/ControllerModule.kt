@@ -32,14 +32,17 @@ class ControllerModule(
             registerRfidTagUseCase = useCaseModule.registerRfidTagUseCase,
             getInventoryDashboardUseCase = useCaseModule.getInventoryDashboardUseCase,
             getInventoryHistoryUseCase = useCaseModule.getInventoryHistoryUseCase,
-            inventoryRepository = repositoryModule.inventoryRepository
+            inventoryRepository = repositoryModule.inventoryRepository,
+            iotModeService = repositoryModule.iotModeService
         )
     }
 
-    val predictionController: PredictionController by lazy {
-        PredictionController(
-            getAllPredictionsUseCase = useCaseModule.getAllPredictionsUseCase,
-            getPredictionByProductIdUseCase = useCaseModule.getPredictionByProductIdUseCase
+    val chartController: presentation.controller.ChartController by lazy {
+        presentation.controller.ChartController(
+            getChartDataUseCase = useCaseModule.getChartDataUseCase,
+            runDailyAggregationUseCase = useCaseModule.runDailyAggregationUseCase,
+            syncAggregationUseCase = useCaseModule.syncAggregationUseCase
         )
     }
 }
+

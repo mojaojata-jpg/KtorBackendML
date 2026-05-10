@@ -4,8 +4,6 @@ import application.usecase.auth.LoginUseCase
 import application.usecase.auth.RegisterUseCase
 import application.usecase.product.*
 import application.usecase.inventory.*
-import application.usecase.prediction.GetAllPredictionsUseCase
-import application.usecase.prediction.GetPredictionByProductIdUseCase
 
 class UseCaseModule(private val repositoryModule: RepositoryModule) {
     // Auth UseCases
@@ -33,7 +31,20 @@ class UseCaseModule(private val repositoryModule: RepositoryModule) {
         GetInventoryHistoryUseCase(repositoryModule.inventoryRepository, repositoryModule.productRepository)
     }
 
-    // Prediction UseCases
-    val getAllPredictionsUseCase: GetAllPredictionsUseCase by lazy { GetAllPredictionsUseCase(repositoryModule.predictionRepository) }
-    val getPredictionByProductIdUseCase: GetPredictionByProductIdUseCase by lazy { GetPredictionByProductIdUseCase(repositoryModule.predictionRepository) }
+    // Aggregation & Chart UseCases
+    val runDailyAggregationUseCase: application.usecase.RunDailyAggregationUseCase by lazy {
+        application.usecase.RunDailyAggregationUseCase(repositoryModule.aggregateRepository)
+    }
+    val syncAggregationUseCase: application.usecase.SyncAggregationUseCase by lazy {
+        application.usecase.SyncAggregationUseCase(repositoryModule.aggregateRepository)
+    }
+    val getChartDataUseCase: application.usecase.GetChartDataUseCase by lazy {
+        application.usecase.GetChartDataUseCase(
+            repositoryModule.productRepository,
+            repositoryModule.inventoryRepository,
+            repositoryModule.aggregateRepository,
+            repositoryModule.forecastRepository
+        )
+    }
 }
+

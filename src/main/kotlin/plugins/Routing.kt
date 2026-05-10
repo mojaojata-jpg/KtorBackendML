@@ -27,7 +27,8 @@ fun Application.configureRouting(appComponent: AppComponent) {
         // 4. Inventory Routes (RFID Based)
         inventoryRoutes(appComponent.controllerModule.inventoryController)
 
-        // 5. Prediction Monitoring Routes (Protected)
-        predictionRoutes(appComponent.controllerModule.predictionController)
+        // 6. Chart & Aggregation Routes
+        chartRoutes(appComponent.controllerModule)
     }
 }
+

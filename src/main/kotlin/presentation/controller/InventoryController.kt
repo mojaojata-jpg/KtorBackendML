@@ -15,43 +15,93 @@ class InventoryController(
     private val registerRfidTagUseCase: RegisterRfidTagUseCase,
     private val getInventoryDashboardUseCase: GetInventoryDashboardUseCase,
     private val getInventoryHistoryUseCase: GetInventoryHistoryUseCase,
-    private val inventoryRepository: domain.repository.InventoryRepository
+    private val inventoryRepository: domain.repository.InventoryRepository,
+    private val iotModeService: infrastructure.service.IotModeService
 ) {
     @Serializable
-    data class ScanRequest(val tag_uid: String, val event_type: String, val note: String? = null)
+    data class ScanRequest(val tag_uid: String, val event_type: String? = null, val note: String? = null)
 
     @Serializable
     data class RegisterTagRequest(val product_id: String, val tag_uid: String, val tag_label: String? = null)
+
+    @Serializable
+    data class IotModeRequest(val mode: String, val product_id: String? = null)
+
+    suspend fun setIotMode(call: ApplicationCall) {
+        val request = call.receive<IotModeRequest>()
+        val mode = try {
+            domain.model.IotOperationMode.valueOf(request.mode.uppercase())
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Invalid mode. Use REGISTER, SCAN_OUT, or NORMAL")
+        }
+
+        if (mode == domain.model.IotOperationMode.REGISTER && request.product_id == null) {
+            throw IllegalArgumentException("Product ID is required for REGISTER mode")
+        }
+
+        iotModeService.setMode(mode, request.product_id)
+        call.respond(HttpStatusCode.OK, BaseResponse<Unit>(
+            success = true,
+            message = "IoT Mode updated to $mode for product ${request.product_id ?: "NONE"}"
+        ))
+    }
 
     suspend fun processScan(call: ApplicationCall) {
         val request = try {
             call.receive<ScanRequest>()
         } catch (e: Exception) {
-            throw IllegalArgumentException("Invalid JSON format or missing required fields (tag_uid, event_type)")
+            throw IllegalArgumentException("Invalid JSON format")
         }
 
-        // 1. Validasi Input
-        require(request.tag_uid.isNotBlank()) { "Tag UID is required" }
-        require(request.event_type.isNotBlank()) { "Event type (IN/OUT) is required" }
-        require(request.event_type in listOf("IN", "OUT")) { "Event type must be either 'IN' or 'OUT'" }
+        val iotStatus = iotModeService.getCurrentStatus()
 
-        // Optional: Get adminId if scanning is done via authenticated handheld
-        val adminId = call.principal<io.ktor.server.auth.jwt.JWTPrincipal>()?.payload?.getClaim("id")?.asString()?.let { UUID.fromString(it) }
+        // OPSI A: SMART BACKEND LOGIC
+        if (iotStatus.mode == domain.model.IotOperationMode.REGISTER && iotStatus.targetProductId != null) {
+            // Jalankan registrasi otomatis
+            val (tag, snapshot) = registerRfidTagUseCase(
+                productId = iotStatus.targetProductId,
+                tagUid = request.tag_uid,
+                tagLabel = "Auto Registered via IotMode",
+                adminId = null // Bisa diisi ID admin dari session jika perlu
+            )
+            
+            call.respond(HttpStatusCode.OK, BaseResponse<RegisterTagResponse>(
+                success = true,
+                message = "Tag ${request.tag_uid} AUTO-REGISTERED to product ${iotStatus.targetProductId}",
+                data = RegisterTagResponse(tag.id.toString(), snapshot.currentStock)
+            ))
+            return
+        }
+
+        if (iotStatus.mode == domain.model.IotOperationMode.SCAN_OUT) {
+            val (event, snapshot) = processRfidScanUseCase(
+                tagUid = request.tag_uid,
+                eventType = "OUT",
+                note = "Continuous Scan Out Mode",
+                isContinuousMode = false // Perbaikan: Kembalikan ke false biar dicek status INACTIVE-nya
+            )
+
+            call.respond(HttpStatusCode.OK, BaseResponse<ScanResponse>(
+                success = true,
+                data = ScanResponse(new_stock = snapshot.currentStock, status = snapshot.status),
+                message = "Scan processed as OUT (Continuous Mode)"
+            ))
+            return
+        }
+
+        // Jika mode NORMAL (Atau default ke OUT jika ESP32 gak kirim event_type)
+        val eventType = request.event_type ?: "OUT" 
         
         val (event, snapshot) = processRfidScanUseCase(
             tagUid = request.tag_uid,
-            eventType = request.event_type,
-            adminId = adminId,
+            eventType = eventType,
             note = request.note
         )
 
-        call.respond(HttpStatusCode.OK, BaseResponse(
+        call.respond(HttpStatusCode.OK, BaseResponse<ScanResponse>(
             success = true,
-            data = ScanResponse(
-                new_stock = snapshot.currentStock,
-                status = snapshot.status
-            ),
-            message = "Scan processed: ${request.event_type}"
+            data = ScanResponse(new_stock = snapshot.currentStock, status = snapshot.status),
+            message = "Scan processed as $eventType"
         ))
     }
 
@@ -75,7 +125,7 @@ class InventoryController(
             adminId = adminId
         )
 
-        call.respond(HttpStatusCode.Created, BaseResponse(
+        call.respond(HttpStatusCode.Created, BaseResponse<RegisterTagResponse>(
             success = true,
             data = RegisterTagResponse(
                 tag_id = tag.id.toString(),
@@ -86,9 +136,13 @@ class InventoryController(
     }
 
     suspend fun getDashboard(call: ApplicationCall) {
+        val days = call.request.queryParameters["days"]?.toIntOrNull() ?: 30
+        val startDate = java.time.LocalDate.now().minusDays(days.toLong())
+        val today = java.time.LocalDate.now()
+
         val dashboardData = getInventoryDashboardUseCase()
         val responseData = dashboardData.map { (product, snapshot) ->
-            val (incoming, outgoing) = inventoryRepository.getProductStats(product.id!!)
+            val (incoming, outgoing) = inventoryRepository.getProductStats(product.id!!, startDate, today)
             DashboardResponse(
                 product_id = product.id.toString(),
                 product_name = product.name,
@@ -100,14 +154,15 @@ class InventoryController(
                 unit = product.unitLabel
             )
         }
-        call.respond(HttpStatusCode.OK, BaseResponse(success = true, data = responseData))
+        call.respond(HttpStatusCode.OK, BaseResponse<List<DashboardResponse>>(success = true, data = responseData))
     }
 
     suspend fun getHistory(call: ApplicationCall) {
         val productId = call.parameters["productId"] ?: throw IllegalArgumentException("Product ID is required")
         val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 50
+        val days = call.request.queryParameters["days"]?.toIntOrNull()
         
-        val history = getInventoryHistoryUseCase(productId, limit)
+        val history = getInventoryHistoryUseCase(productId, limit, days)
         val responseData = history.map {
             HistoryResponse(
                 event_type = it.eventType,
@@ -116,6 +171,6 @@ class InventoryController(
                 note = it.note
             )
         }
-        call.respond(HttpStatusCode.OK, BaseResponse(success = true, data = responseData))
+        call.respond(HttpStatusCode.OK, BaseResponse<List<HistoryResponse>>(success = true, data = responseData))
     }
 }

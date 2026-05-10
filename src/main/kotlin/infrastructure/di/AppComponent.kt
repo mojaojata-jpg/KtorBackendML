@@ -11,4 +11,11 @@ class AppComponent(environment: ApplicationEnvironment) {
     val repositoryModule by lazy { RepositoryModule(database) }
     val useCaseModule by lazy { UseCaseModule(repositoryModule) }
     val controllerModule by lazy { ControllerModule(useCaseModule, repositoryModule, jwtService) }
+    
+    val dailyAggregationJob by lazy { infrastructure.scheduler.DailyAggregationJob(useCaseModule.runDailyAggregationUseCase) }
+
+    init {
+        dailyAggregationJob.start()
+    }
 }
+

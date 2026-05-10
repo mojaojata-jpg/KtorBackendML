@@ -15,18 +15,22 @@ class ProcessRfidScanUseCase(
         tagUid: String,
         eventType: String, // IN, OUT
         adminId: UUID? = null,
-        note: String? = null
+        note: String? = null,
+        isContinuousMode: Boolean = false // Tambahkan flag
     ): Pair<InventoryEvent, InventorySnapshot> {
         // 1. Find the tag
         val tag = inventoryRepository.findTagByUid(tagUid)
             ?: throw IllegalArgumentException("RFID Tag not registered: $tagUid")
 
         // 2. State Validation (PENTING!)
-        if (eventType == "OUT" && tag.status != "ACTIVE") {
-            throw IllegalArgumentException("Barang (Tag: $tagUid) sudah tidak ada di stok (Status: ${tag.status})")
-        }
-        if (eventType == "IN" && tag.status == "ACTIVE") {
-            throw IllegalArgumentException("Barang (Tag: $tagUid) sudah ada di dalam stok (Status: ACTIVE)")
+        // Jika Continuous Mode (Scan Out), kita abaikan status INACTIVE supaya bisa scan berkali-kali buat testing/simulasi lebat
+        if (!isContinuousMode) {
+            if (eventType == "OUT" && tag.status != "ACTIVE") {
+                throw IllegalArgumentException("Barang (Tag: $tagUid) sudah tidak ada di stok (Status: ${tag.status})")
+            }
+            if (eventType == "IN" && tag.status == "ACTIVE") {
+                throw IllegalArgumentException("Barang (Tag: $tagUid) sudah ada di dalam stok (Status: ACTIVE)")
+            }
         }
 
         // 3. Get Product Info
@@ -39,7 +43,7 @@ class ProcessRfidScanUseCase(
             tagId = tag.id,
             adminId = adminId,
             eventType = eventType,
-            quantity = if (eventType == "IN") 1 else -1,
+            quantity = 1, // Standardized: Always positive 1, movement direction defined by eventType
             note = note,
             recordedAt = LocalDateTime.now()
         )
@@ -52,7 +56,7 @@ class ProcessRfidScanUseCase(
         // 6. Calculate New Stock (Snapshot)
         val latestSnapshot = inventoryRepository.getLatestSnapshot(tag.productId)
         val previousStock = latestSnapshot?.currentStock ?: 0
-        val newStock = previousStock + event.quantity
+        val newStock = if (eventType == "IN") previousStock + 1 else previousStock - 1
         
         // Ensure stock doesn't go below zero
         val finalStock = if (newStock < 0) 0 else newStock

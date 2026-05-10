@@ -23,9 +23,11 @@ Dokumentasi lengkap untuk semua endpoint API backend Ktor. Cocok untuk tim **Mob
    - [POST /api/v1/inventory/register-tag](#42-register-rfid-tag-protected)
    - [GET /api/v1/inventory/dashboard](#43-dashboard-stok-protected)
    - [GET /api/v1/inventory/{productId}/history](#44-riwayat-pergerakan-stok-protected)
-5. [Prediksi ML](#5-modul-prediksi-ml-protected--jwt)
-   - [GET /api/v1/predictions](#51-get-semua-prediksi)
-   - [GET /api/v1/predictions/{productId}](#52-get-prediksi-per-produk)
+   - [POST /api/v1/inventory/iot-mode](#45-set-iot-operation-mode-protected)
+5. [Forecasting & Grafik (New)](#5-forecasting--grafik-new---prophet-based)
+   - [GET /api/v1/inventory/chart-data/{productId}](#51-get-data-grafik--estimasi-stok-habis)
+   - [POST /api/v1/inventory/aggregate/manual](#52-trigger-agregasi-harian-manual)
+   - [POST /api/admin/inventory/aggregate/sync](#53-admin-sync-agregasi-harian-protected)
 6. [Error Responses Global](#6-error-responses-global)
 
 ---
@@ -282,8 +284,9 @@ Membuat produk baru di sistem.
     "minStockThreshold": 5,
     "description": "Kopi kualitas ekspor dari Aceh",
     "imageUrl": "https://xyz.supabase.co/storage/v1/object/public/products/kopi.jpg",
-    "createdAt": "2026-04-20T11:30:00",
-    "updatedAt": "2026-04-20T11:30:00"
+    "imageUrl": "https://xyz.supabase.co/storage/v1/object/public/products/kopi.jpg",
+    "createdAt": "2026-04-20T11:30:00.123456",
+    "updatedAt": "2026-04-20T11:30:00.123456"
   },
   "message": "Product created successfully",
   "error_code": null
@@ -935,17 +938,28 @@ Menampilkan histori event untuk satu produk, diurutkan dari yang terbaru. Event 
 
 ---
 
-## 5. Modul Prediksi ML (Protected — JWT)
+### 4.5 Set IoT Operation Mode (Protected)
 
-> **Catatan:** Data prediksi **diisi oleh ML Service (Python)** secara terjadwal langsung ke tabel `prediction_results` di database. Endpoint ini hanya membaca data, **tidak menjalankan model ML**.
+Mengontrol mode operasional pembaca RFID (IoT). Berguna untuk aktivasi registrasi otomatis atau mode scan-out berkelanjutan.
 
-### 5.1 Get Semua Prediksi
-
-Mengambil hasil prediksi terbaru untuk semua produk.
-
-- **Method:** `GET`
-- **URL:** `/api/v1/predictions`
+- **Method:** `POST`
+- **URL:** `/api/v1/inventory/iot-mode`
 - **Auth:** ✅ JWT Required
+
+**Request Body:**
+```json
+{
+  "mode": "SCAN_OUT",
+  "product_id": "optional-uuid-here"
+}
+```
+
+**Penjelasan Mode:**
+| Mode | Deskripsi | Syarat |
+|---|---|---|
+| `NORMAL` | Mode standar untuk scan IN/OUT (tergantung payload ESP32). | `product_id` opsional/diabaikan. |
+| `REGISTER` | Setiap scan baru akan **otomatis didaftarkan** ke `product_id`. | `product_id` wajib diisi. |
+| `SCAN_OUT` | Setiap scan akan dipaksa menjadi event **OUT**, mengabaikan input ESP32. Pada mode ini, pengecekan status tag (`ACTIVE`/`INACTIVE`) dilewati agar dapat melakukan simulasi/transaksi massal dengan cepat. | `product_id` opsional. |
 
 ---
 
@@ -953,80 +967,122 @@ Mengambil hasil prediksi terbaru untuk semua produk.
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "productId": "550e8400-e29b-41d4-a716-446655440000",
-      "modelName": "LinearRegression",
-      "modelVersion": "1.0.0",
-      "predictedDaysRemaining": 7,
-      "predictedStockOutDate": "2026-04-27",
-      "confidenceScore": 0.92,
-      "createdAt": "2026-04-20T06:00:00"
-    },
-    {
-      "productId": "660e9500-f30c-52e5-b827-557766551111",
-      "modelName": "LinearRegression",
-      "modelVersion": "1.0.0",
-      "predictedDaysRemaining": 2,
-      "predictedStockOutDate": "2026-04-22",
-      "confidenceScore": null,
-      "createdAt": "2026-04-20T06:00:00"
-    }
-  ],
-  "message": "All prediction results retrieved successfully",
-  "error_code": null
+  "data": null,
+  "message": "IoT Mode updated to SCAN_OUT for product NONE"
 }
 ```
 
-> ⚠️ Endpoint ini mengembalikan **semua baris** di tabel `prediction_results` diurutkan dari `createdAt` terbaru. Jika ML Service menulis prediksi berkali-kali untuk produk yang sama, semua record-nya akan muncul di sini.
-
-**Penjelasan Field:**
-| Field | Tipe | Keterangan |
-|---|---|---|
-| `productId` | String (UUID) | ID produk yang diprediksi |
-| `modelName` | String | Nama algoritma ML (e.g., `LinearRegression`) |
-| `modelVersion` | String | Versi model |
-| `predictedDaysRemaining` | Int | Estimasi sisa hari sebelum stok habis |
-| `predictedStockOutDate` | String | Tanggal stok habis (format: `YYYY-MM-DD`) |
-| `confidenceScore` | Double / null | Kepercayaan model (0.0–1.0). `null` jika tidak tersedia |
-| `createdAt` | String | Waktu model membuat prediksi |
-
-**✅ Response Success (Belum Ada Data Prediksi) — `200 OK`:**
-```json
-{
-  "success": true,
-  "data": [],
-  "message": "All prediction results retrieved successfully",
-  "error_code": null
-}
-```
-
-**❌ Response Error — `500 Internal Server Error`:**
+**❌ Response Error — `400 Bad Request` (Validasi Gagal):**
 ```json
 {
   "success": false,
   "data": null,
-  "message": "Internal Server Error: <detail error>",
+  "message": "Product ID is required for REGISTER mode"
+}
+```
+
+---
+
+---
+
+## 5. Forecasting & Grafik (New - Prophet Based)
+
+Modul baru ini menggantikan sistem regresi linear lama. Data disediakan dalam bentuk deret waktu (time-series) untuk kebutuhan grafik dan estimasi sisa stok. Backend akan menghitung sisa hari secara real-time berdasarkan ramalan demand dari Prophet.
+
+### 5.1 GET Data Grafik & Estimasi Stok Habis
+
+Endpoint utama untuk menampilkan dashboard produk. Mengembalikan data histori (30 hari terakhir) dan data ramalan masa depan dari Prophet.
+
+- **Method:** `GET`
+- **URL:** `/api/v1/inventory/chart-data/{productId}`
+- **Auth:** ❌ Tidak diperlukan (Public / Dashboard)
+
+**✅ Response Success — `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "product": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Biji Kopi Arabika 1kg",
+      "code": "KOPI-ARA-001",
+      "unitLabel": "bag",
+      "minStockThreshold": 5,
+      "description": "...",
+      "imageUrl": "...",
+      "createdAt": "...",
+      "updatedAt": "..."
+    },
+    "currentStock": 15,
+    "estimatedStockOutDate": "2026-05-20",
+    "remainingDays": 21,
+    "historicalData": [
+      {
+        "date": "2026-04-28",
+        "totalIn": 10,
+        "totalOut": 2,
+        "netFlow": 8
+      }
+    ],
+    "forecastingData": [
+      {
+        "targetDate": "2026-04-30",
+        "predictedValue": 2.5,
+        "lowerBound": 2.0,
+        "upperBound": 3.0
+      }
+    ]
+  },
+  "message": null,
+  "error_code": null
+}
+```
+
+**Keterangan Field:**
+| Field | Deskripsi |
+|---|---|
+| `currentStock` | Jumlah stok riil saat ini di gudang. |
+| `estimatedStockOutDate` | Tanggal estimasi stok habis (hasil hitungan Backend terhadap ramalan Prophet). |
+| `remainingDays` | Berapa hari lagi stok diprediksi bertahan. |
+| `historicalData` | Rekap harian 30 hari terakhir (In, Out, Net). |
+| `forecastingData` | Ramalan pengeluaran barang harian ke depan dari Prophet. |
+
+---
+
+### 5.2 Trigger Agregasi Harian Manual
+
+Memicu proses rekapitulasi data scan (`inventory_events`) menjadi data harian (`daily_aggregates`) secara paksa.
+
+- **Method:** `POST`
+- **URL:** `/api/v1/inventory/aggregate/manual`
+- **Query Parameter:** `date` (format `YYYY-MM-DD`, opsional)
+
+**✅ Response Success — `200 OK`:**
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "Aggregation for 2026-04-29 triggered successfully",
   "error_code": null
 }
 ```
 
 ---
 
-### 5.2 Get Prediksi per Produk
+### 5.3 Admin Sync Agregasi Harian (Protected)
 
-Mengambil prediksi terbaru untuk satu produk tertentu.
+Endpoint untuk Admin agar bisa **memperbarui data rekapitulasi stok secara real-time**. Berbeda dengan `aggregate/manual` yang hanya memproses produk yang punya event, endpoint ini memproses **SEMUA produk aktif** — termasuk yang tidak ada event (diisi 0). Ini memastikan ML Service mendapat gambaran data lengkap.
 
-- **Method:** `GET`
-- **URL:** `/api/v1/predictions/{productId}`
-- **Auth:** ✅ JWT Required
+> ⚠️ **Penting untuk ML:** Endpoint ini wajib dipanggil oleh Admin setelah ada aktivitas scan agar ML Service (yang polling setiap 5 menit) bisa mendeteksi perubahan data melalui kolom `updated_at` di tabel `daily_aggregates`.
 
-**Path Parameter:**
-| Parameter | Tipe | Keterangan |
-|---|---|---|
-| `productId` | UUID String | ID produk |
+- **Method:** `POST`
+- **URL:** `/api/admin/inventory/aggregate/sync`
+- **Auth:** ✅ JWT Required (Admin Only)
+- **Query Parameter:** `date` (format `YYYY-MM-DD`, opsional — default: hari ini)
 
-**Contoh URL:** `/api/v1/predictions/550e8400-e29b-41d4-a716-446655440000`
+**Contoh URL:**
+- `/api/admin/inventory/aggregate/sync` → sync untuk hari ini
+- `/api/admin/inventory/aggregate/sync?date=2026-05-01` → sync untuk tanggal tertentu
 
 ---
 
@@ -1035,53 +1091,43 @@ Mengambil prediksi terbaru untuk satu produk tertentu.
 {
   "success": true,
   "data": {
-    "productId": "550e8400-e29b-41d4-a716-446655440000",
-    "modelName": "LinearRegression",
-    "modelVersion": "1.0.0",
-    "predictedDaysRemaining": 7,
-    "predictedStockOutDate": "2026-04-27",
-    "confidenceScore": 0.92,
-    "createdAt": "2026-04-20T06:00:00"
+    "date": "2026-05-06",
+    "productsSynced": 6
   },
-  "message": "Latest prediction result retrieved successfully",
+  "message": "Aggregation sync completed for 2026-05-06. 6 product(s) processed.",
   "error_code": null
 }
 ```
 
-**✅ Response Success (Belum Ada Prediksi untuk Produk Ini) — `200 OK`:**
+**Penjelasan Field:**
+| Field | Tipe | Keterangan |
+|---|---|---|
+| `date` | String | Tanggal yang di-sync (format: `YYYY-MM-DD`) |
+| `productsSynced` | Int | Jumlah produk aktif yang diproses |
 
-> ⚠️ Ketika produk ada tapi belum ada data prediksi, server tetap mengembalikan **200 OK** dengan `data: null`.
+**❌ Response Error — `401 Unauthorized` (Tanpa Token / Token Expired):**
 
-```json
-{
-  "success": true,
-  "data": null,
-  "message": "No prediction data found for this product",
-  "error_code": null
-}
-```
+> Ktor mengembalikan response `401` dengan body kosong dan header `WWW-Authenticate`. Tangani di client dengan mengecek status code.
 
-**❌ Response Error — `400 Bad Request` (productId Kosong / Tidak Dikirim):**
+**❌ Response Error — `400 Bad Request` (Format Tanggal Salah):**
 ```json
 {
   "success": false,
   "data": null,
-  "message": "Product ID is required",
+  "message": "Invalid date format. Use YYYY-MM-DD (e.g., 2026-05-06)",
   "error_code": null
 }
 ```
 
-**❌ Response Error — `500 Internal Server Error`:**
+**❌ Response Error — `500 Internal Server Error` (Database Error):**
 ```json
 {
   "success": false,
   "data": null,
-  "message": "Internal Server Error: <detail error>",
+  "message": "Failed to sync aggregation: <detail error>",
   "error_code": null
 }
 ```
-
----
 
 ## 6. Error Responses Global
 
@@ -1158,8 +1204,9 @@ Terjadi untuk error yang bukan `IllegalArgumentException` (misalnya database err
 | `POST` | `/api/v1/inventory/register-tag` | ✅ JWT | `201` | Daftarkan tag RFID ke produk |
 | `GET` | `/api/v1/inventory/dashboard` | ✅ JWT | `200` | Dashboard ringkasan stok |
 | `GET` | `/api/v1/inventory/{productId}/history` | ✅ JWT | `200` | Riwayat scan suatu produk |
-| `GET` | `/api/v1/predictions` | ✅ JWT | `200` | Semua hasil prediksi ML |
-| `GET` | `/api/v1/predictions/{productId}` | ✅ JWT | `200` | Prediksi ML per produk |
+| `GET` | `/api/v1/inventory/chart-data/{productId}` | ❌ Public | `200` | Grafik & Estimasi Stok Habis (Prophet) |
+| `POST` | `/api/v1/inventory/aggregate/manual` | ❌ Public | `200` | Trigger rekap harian manual |
+| `POST` | `/api/admin/inventory/aggregate/sync` | ✅ JWT | `200` | Admin Sync agregasi semua produk |
 
 ---
 
