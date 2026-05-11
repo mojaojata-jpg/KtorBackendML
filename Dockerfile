@@ -12,5 +12,6 @@ WORKDIR /app
 COPY --from=build /app/build/libs/*-all.jar app.jar
 EXPOSE 8080
 
-# Railway sets PORT env var. Ktor accepts -port as CLI argument.
-CMD ["sh", "-c", "java -jar app.jar -port=${PORT:-8080}"]
+# Railway sets PORT env var automatically.
+# We use the -port argument to override application.yaml
+CMD ["sh", "-c", "java -jar app.jar -port=${PORT}"]

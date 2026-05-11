@@ -7,8 +7,10 @@ fun main(args: Array<String>) {
 }
 
 fun Application.module() {
-    // 1. Inisialisasi Dependency Injection (AppComponent mengelola database & modules)
-    // Fokus sistem: RFID-Based Inventory Management & ML Prediction
+    // Railway/Production: Force port from environment variable if available
+    val port = System.getenv("PORT")?.toInt() ?: 8080
+    log.info("Server is starting on port: $port")
+
     val appComponent = AppComponent(environment)
 
     // 2. Configure Plugins
