@@ -21,4 +21,5 @@ interface InventoryRepository {
 
     // Report queries
     suspend fun getAllEventsForDate(date: java.time.LocalDate, limit: Int = 500): List<Pair<InventoryEvent, domain.model.Product>>
+    suspend fun getBatchProductStats(productIds: List<UUID>, startDate: java.time.LocalDate? = null, endDate: java.time.LocalDate? = null): Map<UUID, Pair<Int, Int>>
 }

@@ -134,12 +134,21 @@ class InventoryRepositoryImpl : InventoryRepository {
     }
 
     override suspend fun getDashboardSnapshots(): List<Pair<domain.model.Product, InventorySnapshot?>> = newSuspendedTransaction {
+        // Use a LEFT JOIN to get products and their latest snapshots in a single query
+        // Note: For simplicity and standard SQL, we'll get all and then filter in-memory if needed,
+        // but the most efficient way is a Join.
         val products = ProductTable.selectAll().where { ProductTable.isActive eq true }.map { rowToProduct(it) }
         
-        products.map { product ->
-            val snapshot = getLatestSnapshotInTransaction(product.id!!)
-            product to snapshot
-        }
+        // Batch fetch snapshots to avoid N+1
+        val snapshots = InventorySnapshotTable
+            .selectAll()
+            .where { InventorySnapshotTable.productId inList products.map { it.id!! } }
+            .orderBy(InventorySnapshotTable.snapshotTime, SortOrder.DESC)
+            .map { rowToSnapshot(it) }
+            .groupBy { it.productId }
+            .mapValues { it.value.firstOrNull() }
+
+        products.map { it to snapshots[it.id] }
     }
 
     override suspend fun getProductStats(productId: UUID, startDate: java.time.LocalDate?, endDate: java.time.LocalDate?): Pair<Int, Int> = newSuspendedTransaction {
@@ -165,6 +174,44 @@ class InventoryRepositoryImpl : InventoryRepository {
             .singleOrNull() ?: 0
 
         Pair(incoming, Math.abs(outgoing))
+    }
+
+    override suspend fun getBatchProductStats(productIds: List<UUID>, startDate: java.time.LocalDate?, endDate: java.time.LocalDate?): Map<UUID, Pair<Int, Int>> = newSuspendedTransaction {
+        val startDateTime = startDate?.atStartOfDay()
+        val endDateTime = endDate?.atTime(23, 59, 59)
+
+        val stats = mutableMapOf<UUID, Pair<Int, Int>>()
+        
+        // Fetch All Incoming
+        InventoryEventTable.select(InventoryEventTable.productId, InventoryEventTable.quantity.sum())
+            .where { (InventoryEventTable.productId inList productIds) and (InventoryEventTable.eventType inList listOf("REGISTER", "IN")) }
+            .apply {
+                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
+                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
+            }
+            .groupBy(InventoryEventTable.productId)
+            .forEach { 
+                val pid = it[InventoryEventTable.productId]
+                val sum = it[InventoryEventTable.quantity.sum()] ?: 0
+                stats[pid] = Pair(sum, 0)
+            }
+
+        // Fetch All Outgoing
+        InventoryEventTable.select(InventoryEventTable.productId, InventoryEventTable.quantity.sum())
+            .where { (InventoryEventTable.productId inList productIds) and (InventoryEventTable.eventType eq "OUT") }
+            .apply {
+                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
+                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
+            }
+            .groupBy(InventoryEventTable.productId)
+            .forEach { 
+                val pid = it[InventoryEventTable.productId]
+                val sum = it[InventoryEventTable.quantity.sum()] ?: 0
+                val current = stats[pid] ?: Pair(0, 0)
+                stats[pid] = Pair(current.first, Math.abs(sum))
+            }
+            
+        stats
     }
 
     // Helper to call inside transaction

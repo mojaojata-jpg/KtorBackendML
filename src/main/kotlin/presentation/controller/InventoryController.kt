@@ -141,15 +141,18 @@ class InventoryController(
         val today = java.time.LocalDate.now()
 
         val dashboardData = getInventoryDashboardUseCase()
+        val productIds = dashboardData.map { it.first.id!! }
+        val batchStats = inventoryRepository.getBatchProductStats(productIds, startDate, today)
+
         val responseData = dashboardData.map { (product, snapshot) ->
-            val (incoming, outgoing) = inventoryRepository.getProductStats(product.id!!, startDate, today)
+            val stats = batchStats[product.id] ?: Pair(0, 0)
             DashboardResponse(
                 product_id = product.id.toString(),
                 product_name = product.name,
                 product_code = product.code,
                 current_stock = snapshot?.currentStock ?: 0,
-                total_incoming = incoming,
-                total_outgoing = outgoing,
+                total_incoming = stats.first,
+                total_outgoing = stats.second,
                 status = snapshot?.status ?: "OUT_OF_STOCK",
                 unit = product.unitLabel
             )
