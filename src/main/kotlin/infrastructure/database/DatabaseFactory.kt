@@ -9,9 +9,10 @@ import org.jetbrains.exposed.sql.transactions.transaction
 object DatabaseFactory {
     fun init(config: ApplicationConfig): Database {
         val driverClassName = "org.postgresql.Driver"
-        val jdbcUrl = config.property("database.url").getString()
-        val user = config.property("database.user").getString()
-        val password = config.property("database.password").getString()
+        // Railway/Production: Read from environment variables first, fallback to config file
+        val jdbcUrl = System.getenv("DATABASE_URL") ?: config.property("database.url").getString()
+        val user = System.getenv("DATABASE_USER") ?: config.property("database.user").getString()
+        val password = System.getenv("DATABASE_PASSWORD") ?: config.property("database.password").getString()
 
         val database = Database.connect(
             url = jdbcUrl,

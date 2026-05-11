@@ -1,0 +1,10 @@
+.git
+.gradle
+.idea
+.kotlin
+build
+*.md
+*.ps1
+*.txt
+local.properties
+.artifacts
