@@ -1,10 +1,9 @@
 /*
   ============================================================
-  SKETCH ESP32 - INVENTORY RFID SYSTEM (PRODUCTION READY)
+  SKETCH ESP32 - INVENTORY RFID SYSTEM (PRODUCTION READY V5.5)
   ============================================================
   Project: StokPintar - Ktor & Machine Learning
-  Target: ESP32 + MFRC522 + Buzzer
-  Endpoint: https://ktormachinelearning-production.up.railway.app/api/v1/inventory/scan
+  Feature: Smart Buzzer Feedback (Success/Error Patterns)
   ============================================================
 */
 
@@ -19,8 +18,6 @@ const char* ssid = "NAMA_WIFI_KAMU";
 const char* password = "PASSWORD_WIFI_KAMU";
 
 // 2. KONFIGURASI SERVER (RAILWAY)
-// Endpoint 'scan' adalah rute publik, tidak butuh JWT. 
-// Backend akan otomatis handle IN/OUT atau REGISTER sesuai 'IoT Mode' yang diset di App Android.
 const char* serverName = "https://ktormachinelearning-production.up.railway.app/api/v1/inventory/scan";
 
 // 3. PIN DEFINITIONS (ESP32)
@@ -29,6 +26,16 @@ const char* serverName = "https://ktormachinelearning-production.up.railway.app/
 #define BUZZER_PIN  21  // Pin Buzzer (+)
 
 MFRC522 rfid(SS_PIN, RST_PIN);
+
+// Helper function untuk bunyi buzzer
+void beep(int duration, int count) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(duration);
+    digitalWrite(BUZZER_PIN, LOW);
+    if (count > 1) delay(100);
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -43,6 +50,9 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nWiFi Connected!");
+  
+  // Feedback WiFi OK: 3 Beep Pendek
+  beep(100, 3);
 
   // Inisialisasi SPI & RFID
   SPI.begin();
@@ -51,11 +61,9 @@ void setup() {
 }
 
 void loop() {
-  // Cek apakah ada kartu baru
-  if (!rfid.PCD_IsNewCardPresent()) return;
-  if (!rfid.PCD_ReadCardSerial()) return;
+  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_ReadCardSerial()) return;
 
-  // 1. Ambil UID Kartu
   String tagUid = "";
   for (byte i = 0; i < rfid.uid.size; i++) {
     tagUid += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
@@ -66,25 +74,17 @@ void loop() {
   Serial.print("\nTag Scanned: ");
   Serial.println(tagUid);
   
-  // Bunyi Buzzer (Beep)
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(150);
-  digitalWrite(BUZZER_PIN, LOW);
+  // Beep Awal (Tanda kartu terbaca)
+  beep(100, 1);
 
-  // 2. Kirim ke Server Ktor
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverName);
     http.addHeader("Content-Type", "application/json");
 
-    // Buat JSON Body
     StaticJsonDocument<200> doc;
     doc["tag_uid"] = tagUid;
     
-    // Tips: Jika ingin kirim manual event_type bisa tambahkan:
-    // doc["event_type"] = "OUT"; 
-    // Tapi jika dikosongkan, backend akan handle otomatis (Smart Mode).
-
     String requestBody;
     serializeJson(doc, requestBody);
 
@@ -93,23 +93,32 @@ void loop() {
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      Serial.print("HTTP Response Code: ");
-      Serial.println(httpResponseCode);
+      Serial.print("HTTP Code: "); Serial.println(httpResponseCode);
       Serial.println("Response: " + response);
       
-      // Berhasil (Visual Feedback)
-      if (httpResponseCode == 200 || httpResponseCode == 201) {
-          // Double Beep
-          digitalWrite(BUZZER_PIN, HIGH); delay(50); digitalWrite(BUZZER_PIN, LOW);
+      // PARSE JSON untuk cek success
+      StaticJsonDocument<500> resDoc;
+      deserializeJson(resDoc, response);
+      bool success = resDoc["success"];
+
+      if (success && (httpResponseCode == 200 || httpResponseCode == 201)) {
+          // BERHASIL: 2 Beep Pendek
+          Serial.println("Result: SUCCESS");
+          beep(100, 2);
+      } else {
+          // GAGAL (Data Error/Tag Not Registered): 1 Beep Panjang
+          Serial.println("Result: FAILED/ERROR");
+          beep(1000, 1);
       }
     } else {
-      Serial.print("Error sending POST: ");
-      Serial.println(httpResponseCode);
+      // SERVER DOWN / NO CONNECTION: 1 Beep Sangat Panjang
+      Serial.print("Connection Error: "); Serial.println(httpResponseCode);
+      beep(2000, 1);
     }
     http.end();
   }
 
-  // Jeda agar tidak double scan
+  rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
   delay(2000);
 }
