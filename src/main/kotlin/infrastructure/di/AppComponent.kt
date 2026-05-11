@@ -5,8 +5,8 @@ import infrastructure.security.JwtService
 import io.ktor.server.application.*
 
 class AppComponent(environment: ApplicationEnvironment) {
-    private val database = DatabaseFactory.init(environment.config)
-    val jwtService = JwtService(environment)
+    private val database = DatabaseFactory.init()
+    val jwtService = JwtService()
 
     val repositoryModule by lazy { RepositoryModule(database) }
     val useCaseModule by lazy { UseCaseModule(repositoryModule) }

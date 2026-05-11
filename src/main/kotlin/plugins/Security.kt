@@ -8,10 +8,10 @@ import com.auth0.jwt.algorithms.Algorithm
 
 fun Application.configureSecurity() {
     // Railway/Production: Read from environment variables first, fallback to config file
-    val jwtSecret = System.getenv("JWT_SECRET") ?: environment.config.property("jwt.secret").getString()
-    val jwtIssuer = System.getenv("JWT_ISSUER") ?: environment.config.property("jwt.issuer").getString()
-    val jwtAudience = System.getenv("JWT_AUDIENCE") ?: environment.config.property("jwt.audience").getString()
-    val jwtRealm = environment.config.property("jwt.realm").getString()
+    val jwtSecret = System.getenv("JWT_SECRET") ?: "stok-pintar-secret-key-2026"
+    val jwtIssuer = System.getenv("JWT_ISSUER") ?: "https://ktormachinelearning-production.up.railway.app"
+    val jwtAudience = System.getenv("JWT_AUDIENCE") ?: "https://ktormachinelearning-production.up.railway.app"
+    val jwtRealm = "ktor-sample-app"
 
     authentication {
         jwt("auth-jwt") {
