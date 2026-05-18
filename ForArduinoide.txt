@@ -24,6 +24,7 @@ const char* serverName = "https://ktormachinelearning-production.up.railway.app/
 #define SS_PIN      5   // SDA
 #define RST_PIN     22  // Reset
 #define BUZZER_PIN  21  // Pin Buzzer (+)
+#define MODE_SWITCH_PIN 4 // Pin Saklar IN/OUT (HIGH = IN, LOW = OUT)
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 
@@ -41,6 +42,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
+  pinMode(MODE_SWITCH_PIN, INPUT_PULLUP); // Gunakan internal pull-up
 
   // Koneksi WiFi
   WiFi.begin(ssid, password);
@@ -77,6 +79,11 @@ void loop() {
   // Beep Awal (Tanda kartu terbaca)
   beep(100, 1);
 
+  // BACA STATUS SWITCH IN/OUT
+  // Misal Pin 4: HIGH = IN (Barang Masuk), LOW = OUT (Barang Keluar)
+  String eventType = digitalRead(MODE_SWITCH_PIN) == HIGH ? "IN" : "OUT";
+  Serial.print("Mode: "); Serial.println(eventType);
+
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverName);
@@ -84,6 +91,7 @@ void loop() {
 
     StaticJsonDocument<200> doc;
     doc["tag_uid"] = tagUid;
+    doc["event_type"] = eventType; // KIRIM KE BACKEND (IN atau OUT)
     
     String requestBody;
     serializeJson(doc, requestBody);

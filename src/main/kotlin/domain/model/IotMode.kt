@@ -6,7 +6,8 @@ import kotlinx.serialization.Serializable
 enum class IotOperationMode {
     NORMAL,    // Scan IN/OUT biasa
     REGISTER,  // Register tag otomatis ke produk tertentu
-    SCAN_OUT   // Scan OUT terus menerus (Continuous Mode)
+    SCAN_OUT,  // Scan OUT terus menerus (Continuous Mode)
+    SCAN_IN    // Scan IN terus menerus (Continuous Mode)
 }
 
 data class IotSystemStatus(

@@ -78,13 +78,29 @@ class InventoryController(
                 tagUid = request.tag_uid,
                 eventType = "OUT",
                 note = "Continuous Scan Out Mode",
-                isContinuousMode = false // Perbaikan: Kembalikan ke false biar dicek status INACTIVE-nya
+                isContinuousMode = false
             )
 
             call.respond(HttpStatusCode.OK, BaseResponse<ScanResponse>(
                 success = true,
                 data = ScanResponse(new_stock = snapshot.currentStock, status = snapshot.status),
                 message = "Scan processed as OUT (Continuous Mode)"
+            ))
+            return
+        }
+        
+        if (iotStatus.mode == domain.model.IotOperationMode.SCAN_IN) {
+            val (event, snapshot) = processRfidScanUseCase(
+                tagUid = request.tag_uid,
+                eventType = "IN",
+                note = "Continuous Scan In Mode",
+                isContinuousMode = false
+            )
+
+            call.respond(HttpStatusCode.OK, BaseResponse<ScanResponse>(
+                success = true,
+                data = ScanResponse(new_stock = snapshot.currentStock, status = snapshot.status),
+                message = "Scan processed as IN (Continuous Mode)"
             ))
             return
         }
