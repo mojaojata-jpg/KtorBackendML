@@ -5,12 +5,15 @@ import domain.model.InventorySnapshot
 import domain.model.ProductRfidTag
 import domain.repository.InventoryRepository
 import domain.repository.ProductRepository
+import domain.repository.AggregateRepository
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
 
 class RegisterRfidTagUseCase(
     private val inventoryRepository: InventoryRepository,
-    private val productRepository: ProductRepository
+    private val productRepository: ProductRepository,
+    private val aggregateRepository: AggregateRepository
 ) {
     suspend operator fun invoke(
         productId: String,
@@ -85,6 +88,15 @@ class RegisterRfidTagUseCase(
         )
         val savedSnapshot = inventoryRepository.saveSnapshot(snapshot)
 
+        // Real-time Aggregation: Sync aggregate stats for this product today
+        try {
+            aggregateRepository.calculateAndUpsertDaily(LocalDate.now())
+        } catch (e: Exception) {
+            // Log or ignore to prevent registration failing if aggregation has an error
+            println("Failed to run real-time aggregation on register: ${e.message}")
+        }
+
         return Pair(savedTag, savedSnapshot)
     }
 }
+

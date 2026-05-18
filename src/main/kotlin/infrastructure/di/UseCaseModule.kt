@@ -19,11 +19,20 @@ class UseCaseModule(private val repositoryModule: RepositoryModule) {
 
     // Inventory UseCases (RFID Based)
     val processRfidScanUseCase: ProcessRfidScanUseCase by lazy { 
-        ProcessRfidScanUseCase(repositoryModule.inventoryRepository, repositoryModule.productRepository) 
+        ProcessRfidScanUseCase(
+            repositoryModule.inventoryRepository, 
+            repositoryModule.productRepository,
+            repositoryModule.aggregateRepository
+        ) 
     }
     val registerRfidTagUseCase: RegisterRfidTagUseCase by lazy {
-        RegisterRfidTagUseCase(repositoryModule.inventoryRepository, repositoryModule.productRepository)
+        RegisterRfidTagUseCase(
+            repositoryModule.inventoryRepository, 
+            repositoryModule.productRepository,
+            repositoryModule.aggregateRepository
+        )
     }
+
     val getInventoryDashboardUseCase: GetInventoryDashboardUseCase by lazy {
         GetInventoryDashboardUseCase(repositoryModule.inventoryRepository)
     }
