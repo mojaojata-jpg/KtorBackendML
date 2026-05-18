@@ -105,7 +105,16 @@ class InventoryController(
             return
         }
 
-        // Jika mode NORMAL (Atau default ke OUT jika ESP32 gak kirim event_type)
+        // Jika mode NORMAL → REJECT! Admin harus pilih SCAN_IN atau SCAN_OUT dulu
+        if (iotStatus.mode == domain.model.IotOperationMode.NORMAL) {
+            call.respond(HttpStatusCode.Forbidden, BaseResponse<Unit>(
+                success = false,
+                message = "Scanner not activated. Please set mode to SCAN_IN or SCAN_OUT first."
+            ))
+            return
+        }
+
+        // Fallback (seharusnya tidak tercapai karena SCAN_IN/SCAN_OUT/REGISTER sudah dihandle di atas)
         val eventType = request.event_type ?: "OUT" 
         
         val (event, snapshot) = processRfidScanUseCase(
