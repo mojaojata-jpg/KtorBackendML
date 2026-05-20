@@ -40,9 +40,9 @@ const char* ssid = "Ghana";
 const char* password = "123456712";
 
 // =============================================
-// 2. KONFIGURASI SERVER (RAILWAY)
+// 2. KONFIGURASI SERVER (HUGGING FACE)
 // =============================================
-const char* serverName = "https://ktormachinelearning-production.up.railway.app/api/v1/inventory/scan";
+const char* serverName = "https://clifford1112-ktormlbackend.hf.space/api/v1/inventory/scan";
 
 // =============================================
 // 3. PIN DEFINITIONS (ESP32)
@@ -240,5 +240,5 @@ void loop() {
 
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
-  delay(1500); // Cooldown 1.5 detik sebelum scan berikutnya
+  delay(800); // Cooldown 800ms sebelum scan berikutnya (Dioptimalkan agar scan responsif & kencang!)
 }
