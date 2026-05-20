@@ -27,71 +27,64 @@ class ProcessRfidScanUseCase(
         eventType: String, // IN, OUT
         adminId: UUID? = null,
         note: String? = null,
-        isContinuousMode: Boolean = false // Tambahkan flag
+        isContinuousMode: Boolean = false
     ): Pair<InventoryEvent, InventorySnapshot> {
-        // 1. Find the tag
+        // 1. Find the tag (safe outside mutex)
         val tag = inventoryRepository.findTagByUid(tagUid)
             ?: throw IllegalArgumentException("RFID Tag not registered: $tagUid")
 
-        // Mencegah Race Condition (lompat/stay) saat discan sangat cepat secara bersamaan!
+        // 2. Get product info (safe outside mutex - product data doesn't change during scan)
+        val product = productRepository.findById(tag.productId.toString())
+            ?: throw IllegalArgumentException("Product not found for tag: $tagUid")
+
+        // 3. Mutex lock: SEQUENTIAL read-modify-write to prevent stock skipping/staying
         val mutex = productScanMutexes.getOrPut(tag.productId) { Mutex() }
         
         return mutex.withLock {
-            // Parallel Execution: Fetch product, snapshot, and record event concurrently!
-            kotlinx.coroutines.coroutineScope {
-                val productDeferred = async { productRepository.findById(tag.productId.toString()) }
-                val latestSnapshotDeferred = async { inventoryRepository.getLatestSnapshot(tag.productId) }
-                val recordedEventDeferred = async {
-                    val event = InventoryEvent(
-                        productId = tag.productId,
-                        tagId = tag.id,
-                        adminId = adminId,
-                        eventType = eventType,
-                        quantity = 1,
-                        note = note,
-                        recordedAt = LocalDateTime.now()
-                    )
-                    inventoryRepository.recordEvent(event)
-                }
+            // Step A: Record event
+            val event = InventoryEvent(
+                productId = tag.productId,
+                tagId = tag.id,
+                adminId = adminId,
+                eventType = eventType,
+                quantity = 1,
+                note = note,
+                recordedAt = LocalDateTime.now()
+            )
+            val recordedEvent = inventoryRepository.recordEvent(event)
 
-                val product = productDeferred.await()
-                    ?: throw IllegalArgumentException("Product not found for tag: $tagUid")
-                
-                val latestSnapshot = latestSnapshotDeferred.await()
-                val recordedEvent = recordedEventDeferred.await()
+            // Step B: Read current stock AFTER event is recorded
+            val latestSnapshot = inventoryRepository.getLatestSnapshot(tag.productId)
+            val previousStock = latestSnapshot?.currentStock ?: 0
+            val newStock = if (eventType == "IN") previousStock + 1 else previousStock - 1
+            val finalStock = if (newStock < 0) 0 else newStock
 
-                val previousStock = latestSnapshot?.currentStock ?: 0
-                val newStock = if (eventType == "IN") previousStock + 1 else previousStock - 1
-                
-                // Ensure stock doesn't go below zero
-                val finalStock = if (newStock < 0) 0 else newStock
-
-                // Determine Status
-                val status = when {
-                    finalStock == 0 -> "OUT_OF_STOCK"
-                    finalStock <= product.minStockThreshold -> "LOW_STOCK"
-                    else -> "SUFFICIENT"
-                }
-
-                val snapshot = InventorySnapshot(
-                    productId = tag.productId,
-                    currentStock = finalStock,
-                    status = status,
-                    sourceEventId = recordedEvent.id
-                )
-                val savedSnapshot = inventoryRepository.saveSnapshot(snapshot)
-
-                // Real-time Aggregation: Sync aggregate stats in background (async) to cut down response time
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    try {
-                        aggregateRepository.calculateAndUpsertDaily(LocalDate.now())
-                    } catch (e: Exception) {
-                        println("Failed to run real-time aggregation in background: ${e.message}")
-                    }
-                }
-
-                Pair(recordedEvent, savedSnapshot)
+            // Step C: Determine status
+            val status = when {
+                finalStock == 0 -> "OUT_OF_STOCK"
+                finalStock <= product.minStockThreshold -> "LOW_STOCK"
+                else -> "SUFFICIENT"
             }
+
+            // Step D: Save new snapshot
+            val snapshot = InventorySnapshot(
+                productId = tag.productId,
+                currentStock = finalStock,
+                status = status,
+                sourceEventId = recordedEvent.id
+            )
+            val savedSnapshot = inventoryRepository.saveSnapshot(snapshot)
+
+            // Step E: Background aggregation (fire-and-forget, non-blocking)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    aggregateRepository.calculateAndUpsertDaily(LocalDate.now())
+                } catch (e: Exception) {
+                    println("Background aggregation failed: ${e.message}")
+                }
+            }
+
+            Pair(recordedEvent, savedSnapshot)
         }
     }
 }
