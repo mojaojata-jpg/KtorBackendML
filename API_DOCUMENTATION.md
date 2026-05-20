@@ -2,8 +2,9 @@
 
 Dokumentasi lengkap untuk semua endpoint API backend Ktor. Cocok untuk tim **Mobile (Android)**, **IoT (ESP32)**, dan **ML Service**.
 
-> **Production Base URL:** `https://ktormachinelearning-production.up.railway.app`
+> **Production Base URL:** `https://clifford1112-ktormlbackend.hf.space`
 > **Local Base URL:** `http://localhost:8080` (Development)
+
 
 ---
 
