@@ -192,35 +192,32 @@ class InventoryRepositoryImpl : InventoryRepository {
         val endDateTime = endDate?.atTime(23, 59, 59)
 
         val stats = mutableMapOf<UUID, Pair<Int, Int>>()
+        productIds.forEach { stats[it] = Pair(0, 0) }
         
-        // Fetch All Incoming
-        InventoryEventTable.select(InventoryEventTable.productId, InventoryEventTable.quantity.sum())
-            .where { (InventoryEventTable.productId inList productIds) and (InventoryEventTable.eventType inList listOf("REGISTER", "IN")) }
-            .apply {
-                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
-                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
-            }
-            .groupBy(InventoryEventTable.productId)
-            .forEach { 
-                val pid = it[InventoryEventTable.productId]
-                val sum = it[InventoryEventTable.quantity.sum()] ?: 0
-                stats[pid] = Pair(sum, 0)
-            }
-
-        // Fetch All Outgoing
-        InventoryEventTable.select(InventoryEventTable.productId, InventoryEventTable.quantity.sum())
-            .where { (InventoryEventTable.productId inList productIds) and (InventoryEventTable.eventType eq "OUT") }
-            .apply {
-                if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
-                if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
-            }
-            .groupBy(InventoryEventTable.productId)
-            .forEach { 
-                val pid = it[InventoryEventTable.productId]
-                val sum = it[InventoryEventTable.quantity.sum()] ?: 0
-                val current = stats[pid] ?: Pair(0, 0)
+        // Single Query Optimization: Fetch both incoming and outgoing stats grouped by event type
+        InventoryEventTable.select(
+            InventoryEventTable.productId,
+            InventoryEventTable.eventType,
+            InventoryEventTable.quantity.sum()
+        )
+        .where { InventoryEventTable.productId inList productIds }
+        .apply {
+            if (startDateTime != null) andWhere { InventoryEventTable.recordedAt greaterEq startDateTime }
+            if (endDateTime != null) andWhere { InventoryEventTable.recordedAt lessEq endDateTime }
+        }
+        .groupBy(InventoryEventTable.productId, InventoryEventTable.eventType)
+        .forEach { 
+            val pid = it[InventoryEventTable.productId]
+            val type = it[InventoryEventTable.eventType]
+            val sum = it[InventoryEventTable.quantity.sum()] ?: 0
+            val current = stats[pid] ?: Pair(0, 0)
+            
+            if (type == "OUT") {
                 stats[pid] = Pair(current.first, Math.abs(sum))
+            } else { // REGISTER or IN
+                stats[pid] = Pair(current.first + sum, current.second)
             }
+        }
             
         stats
     }
