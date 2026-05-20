@@ -10,4 +10,5 @@ pinned: false
 
 # Ktor Machine Learning Backend
 
-This is the Ktor backend application deployed on Hugging Face Spaces.
+This is the Ktor backend application deployed on Hugging Face Spaces and Railway Singapore.
+
