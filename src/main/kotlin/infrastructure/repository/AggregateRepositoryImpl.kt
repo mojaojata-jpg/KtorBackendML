@@ -157,6 +157,13 @@ class AggregateRepositoryImpl : AggregateRepository {
         syncedCount
     }
 
+    override suspend fun countByProduct(productId: UUID): Long = newSuspendedTransaction {
+        DailyAggregateTable
+            .selectAll()
+            .where { DailyAggregateTable.productId eq productId }
+            .count()
+    }
+
     private fun rowToAggregate(row: ResultRow) = DailyAggregate(
         id = row[DailyAggregateTable.id],
         productId = row[DailyAggregateTable.productId],

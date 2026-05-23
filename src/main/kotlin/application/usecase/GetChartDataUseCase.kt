@@ -30,16 +30,18 @@ class GetChartDataUseCase(
         val aggregatesDeferred = async { aggregateRepository.getByProductAndDateRange(productId, startDate, today) }
         val forecastsDeferred = async { forecastRepository.getForecastsByProduct(productId, today.plusDays(1)) }
         val statsDeferred = async { inventoryRepository.getProductStats(productId, startDate, today) }
+        val historyDaysCountDeferred = async { aggregateRepository.countByProduct(productId) }
 
         val snapshot = snapshotDeferred.await()
         val aggregates = aggregatesDeferred.await()
         val forecasts = forecastsDeferred.await()
         val (rangeTotalIn, rangeTotalOut) = statsDeferred.await()
+        val historyDaysCount = historyDaysCountDeferred.await()
 
         val currentStock = snapshot?.currentStock ?: 0
 
         // LOGIC: Strict 60-day minimum requirement for prediction
-        val hasEnoughData = aggregates.size >= 60
+        val hasEnoughData = historyDaysCount >= 60
         val validForecasts = if (hasEnoughData) forecasts else emptyList()
 
         // Logic to calculate estimated stock out date

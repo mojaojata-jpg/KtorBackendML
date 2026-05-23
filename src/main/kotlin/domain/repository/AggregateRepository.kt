@@ -8,4 +8,5 @@ interface AggregateRepository {
     suspend fun calculateAndUpsertDaily(date: LocalDate)
     suspend fun syncAllProductsForDate(date: LocalDate): Int
     suspend fun getByProductAndDateRange(productId: UUID, startDate: LocalDate, endDate: LocalDate): List<DailyAggregate>
+    suspend fun countByProduct(productId: UUID): Long
 }
